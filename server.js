@@ -43,7 +43,7 @@ const User = mongoose.model('User', userSchema);
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    'http://localhost:5173'
+    process.env.CLIENT_URL || 'http://localhost:5173' // Uses cloud URL if available
 );
 
 // --- 4. API ROUTES ---
