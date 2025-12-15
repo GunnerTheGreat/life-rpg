@@ -1,26 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Zap, Bell, Plus, Star, Repeat, LayoutDashboard, PenTool, CheckCircle, Calendar, Clock, ChevronRight, LogOut, Trash2, User, RotateCcw, Settings, Moon, Sun, Monitor } from 'lucide-react';
+import { Shield, Zap, Bell, Plus, Star, Repeat, LayoutDashboard, PenTool, CheckCircle, Calendar, Clock, ChevronRight, LogOut, Trash2, User, RotateCcw, Settings, Moon, Sun, Monitor, Sword, Map as MapIcon } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-// 🎨 THEME DEFINITIONS
 const THEMES = {
   light: {
     id: 'light', name: 'Day Mode', 
     bg: 'bg-gray-50', card: 'bg-white', text: 'text-gray-800', subtext: 'text-gray-500', 
-    border: 'border-gray-200', input: 'bg-white border-gray-200', hover: 'hover:bg-gray-50'
+    border: 'border-gray-200', input: 'bg-white border-gray-200', hover: 'hover:bg-gray-50', button: 'bg-black text-white hover:bg-gray-800'
   },
   dark: {
     id: 'dark', name: 'Dark Mode', 
     bg: 'bg-gray-900', card: 'bg-gray-800', text: 'text-white', subtext: 'text-gray-400', 
-    border: 'border-gray-700', input: 'bg-gray-700 border-gray-600 text-white', hover: 'hover:bg-gray-700'
+    border: 'border-gray-700', input: 'bg-gray-700 border-gray-600 text-white', hover: 'hover:bg-gray-700', button: 'bg-blue-600 text-white hover:bg-blue-700'
   },
   midnight: {
     id: 'midnight', name: 'Midnight', 
     bg: 'bg-slate-900', card: 'bg-slate-800', text: 'text-blue-50', subtext: 'text-slate-400', 
-    border: 'border-slate-700', input: 'bg-slate-700 border-slate-600 text-white', hover: 'hover:bg-slate-700'
+    border: 'border-slate-700', input: 'bg-slate-700 border-slate-600 text-white', hover: 'hover:bg-slate-700', button: 'bg-cyan-600 text-white hover:bg-cyan-700'
   }
 };
 
@@ -31,13 +30,11 @@ const LifeRPG = () => {
   const [quests, setQuests] = useState([]);
   const [logs, setLogs] = useState([{ id: 1, text: "System Initialized.", type: "gain", time: "Now" }]);
   const [authToken, setAuthToken] = useState(null);
-  
-  // USER & THEME
   const [userEmail, setUserEmail] = useState(null);
   const [ign, setIgn] = useState("Adventurer");
   const [showIgnModal, setShowIgnModal] = useState(false);
   const [newIgnInput, setNewIgnInput] = useState("");
-  const [theme, setTheme] = useState(THEMES.light); // Default Theme
+  const [theme, setTheme] = useState(THEMES.light);
 
   // INPUTS
   const [newTask, setNewTask] = useState(""); 
@@ -46,14 +43,12 @@ const LifeRPG = () => {
   const [timeFrame, setTimeFrame] = useState("09:00"); 
   const [routineDays, setRoutineDays] = useState("");
 
-  // 🛡️ FRONTEND DEDUPLICATION
+  // DEDUPE & SORT
   let cleanedQuests = quests.filter((q, index, self) =>
     index === self.findIndex((t) => (
       t.task === q.task && new Date(t.time).getTime() === new Date(q.time).getTime()
     ))
   );
-
-  // 🕒 AUTO-SORT BY TIME (Earliest First)
   cleanedQuests.sort((a, b) => new Date(a.time) - new Date(b.time));
 
   // HELPERS
@@ -71,12 +66,10 @@ const LifeRPG = () => {
       return (completed / total) * 100;
   };
 
-  // PROGRESS BARS
   const routineProgress = getProgress('routine');
   const mainProgress = getProgress('main');
   const sideProgress = getProgress('side');
 
-  // FILTERS
   const filterList = (type) => cleanedQuests.filter(q => q.type === type && (!q.completed || isToday(q.time)));
   const routineQuests = filterList('routine');
   const mainQuests = filterList('main');
@@ -88,16 +81,15 @@ const LifeRPG = () => {
         const savedToken = localStorage.getItem('googleAuthToken');
         const savedEmail = localStorage.getItem('userEmail');
         const savedTheme = localStorage.getItem('appTheme');
-
-        // Load Theme
         if (savedTheme && THEMES[savedTheme]) setTheme(THEMES[savedTheme]);
 
         if (savedToken && savedEmail) {
-            setAuthToken(savedToken);
-            setUserEmail(savedEmail);
+            // Don't set token immediately to avoid flash of dashboard if token is invalid
             try {
                 const res = await axios.post(`${API_URL}/api/user/login`, { email: savedEmail });
                 if (res.data.exists) {
+                    setAuthToken(savedToken); // Only set token if valid
+                    setUserEmail(savedEmail);
                     setStats(res.data.user.stats);
                     setIgn(res.data.user.ign);
                     addLog(`Welcome back, ${res.data.user.ign}!`, "gain");
@@ -112,7 +104,6 @@ const LifeRPG = () => {
   const changeTheme = (themeKey) => {
       setTheme(THEMES[themeKey]);
       localStorage.setItem('appTheme', themeKey);
-      addLog(`Theme changed to ${THEMES[themeKey].name}`, "gain");
   };
 
   const saveStats = async (newStats) => {
@@ -130,16 +121,19 @@ const LifeRPG = () => {
           const email = googleUser.data.email;
           localStorage.setItem('googleAuthToken', token);
           localStorage.setItem('userEmail', email);
-          setAuthToken(token);
           setUserEmail(email);
 
           const dbCheck = await axios.post(`${API_URL}/api/user/login`, { email });
           if (dbCheck.data.exists) {
               setStats(dbCheck.data.user.stats);
               setIgn(dbCheck.data.user.ign);
+              setAuthToken(token); // Enable Dashboard
               fetchCalendar(token);
               addLog(`Welcome back, ${dbCheck.data.user.ign}!`, "gain");
-          } else setShowIgnModal(true);
+          } else {
+              setAuthToken(token); // Temp enable to show IGN Modal
+              setShowIgnModal(true);
+          }
       } catch (err) { console.error("Login Error", err); }
     },
     scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email'
@@ -167,16 +161,12 @@ const LifeRPG = () => {
       setQuests([]);
       setStats({ level: 1, coins: 0, hp: 1000, maxHp: 1000, exp: 0, maxExp: 1000 });
       setIgn("Adventurer");
-      addLog("Logged out.", "loss");
   };
 
   const fetchCalendar = async (token) => {
     try {
       const res = await axios.post(`${API_URL}/api/sync-calendar`, { token });
-      if(res.data.success) {
-        setQuests(res.data.events); 
-        if(!authToken) addLog("Synced with Google!", "gain");
-      }
+      if(res.data.success) setQuests(res.data.events); 
     } catch (err) { if (err.response && err.response.status === 500) logout(); }
   };
 
@@ -201,28 +191,16 @@ const LifeRPG = () => {
   const toggleQuest = async (q) => {
       const isUndoing = q.completed;
       setQuests(prev => prev.map(item => item.id === q.id ? { ...item, completed: !isUndoing } : item));
-
       let xpGain = q.type === 'main' ? 200 : q.type === 'routine' ? 30 : 50;
       let coinGain = q.type === 'main' ? 100 : 20;
       const multiplier = isUndoing ? -1 : 1;
-      
-      const newStats = { 
-          ...stats, 
-          exp: Math.max(0, stats.exp + (xpGain * multiplier)), 
-          coins: Math.max(0, stats.coins + (coinGain * multiplier)) 
-      };
-
+      const newStats = { ...stats, exp: Math.max(0, stats.exp + (xpGain * multiplier)), coins: Math.max(0, stats.coins + (coinGain * multiplier)) };
       if (!isUndoing && newStats.exp >= newStats.maxExp) {
-          newStats.level += 1;
-          newStats.exp -= newStats.maxExp;
-          newStats.maxExp = Math.round(newStats.maxExp * 1.2); 
-          newStats.hp = newStats.maxHp; 
+          newStats.level += 1; newStats.exp -= newStats.maxExp; newStats.maxExp = Math.round(newStats.maxExp * 1.2); newStats.hp = newStats.maxHp; 
           addLog(`LEVEL UP! You are now Level ${newStats.level}`, "gain");
       }
-
       saveStats(newStats); 
       addLog(`${isUndoing ? 'Undid' : 'Completed'} ${q.type} quest! ${isUndoing ? '-' : '+'}${xpGain} XP`, isUndoing ? 'loss' : 'gain');
-
       if (authToken) {
           try {
               if (isUndoing) await axios.post(`${API_URL}/api/uncomplete-quest`, { token: authToken, eventId: q.id, task: q.task });
@@ -234,9 +212,7 @@ const LifeRPG = () => {
   const deleteQuest = async (id, type) => {
       setQuests(prev => prev.filter(q => q.id !== id));
       addLog(`Deleted ${type} quest.`, 'loss');
-      if (authToken) {
-          try { await axios.post(`${API_URL}/api/delete-quest`, { token: authToken, eventId: id, type: type }); } catch (err) {}
-      }
+      if (authToken) { try { await axios.post(`${API_URL}/api/delete-quest`, { token: authToken, eventId: id, type: type }); } catch (err) {} }
   };
 
   const sendReminder = async (quest) => {
@@ -246,7 +222,6 @@ const LifeRPG = () => {
 
   const addLog = (text, type) => { setLogs(prev => [{ id: Date.now(), text, type, time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }, ...prev]); };
 
-  // --- COMPONENTS ---
   const QuestItem = ({ q }) => (
     <div className={`flex items-center justify-between p-4 rounded-xl shadow-sm mb-3 border-l-4 transition-all hover:translate-x-1 ${theme.card} ${theme.border} ${
         q.type === 'main' ? 'border-l-yellow-500' : q.type === 'routine' ? 'border-l-blue-400' : 'border-l-gray-300'
@@ -255,12 +230,10 @@ const LifeRPG = () => {
             {q.type === 'main' && <Star className="text-yellow-500 fill-yellow-500" size={20}/>}
             {q.type === 'routine' && <Repeat className="text-blue-500" size={20}/>}
             {q.type === 'side' && <div className={`w-5 h-5 rounded-full border-2 ${theme.border}`}></div>}
-            
             <div>
                 <p className={`font-bold ${theme.text} ${q.completed ? 'line-through opacity-50' : ''}`}>{q.task}</p>
                 <p className={`text-xs ${theme.subtext} font-bold tracking-wide uppercase mt-0.5 flex items-center gap-1`}>
-                   <Clock size={10}/> 
-                   {new Date(q.time).toLocaleDateString([], {weekday: 'short', month: 'short', day: 'numeric'})} • {new Date(q.time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                   <Clock size={10}/> {new Date(q.time).toLocaleDateString([], {weekday: 'short', month: 'short', day: 'numeric'})} • {new Date(q.time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
                 </p>
             </div>
         </div>
@@ -275,7 +248,9 @@ const LifeRPG = () => {
   );
 
   return (
-    <div className={`min-h-screen ${theme.bg} ${theme.text} font-sans flex flex-col md:flex-row relative transition-colors duration-300`}>
+    <div className={`min-h-screen ${theme.bg} ${theme.text} font-sans flex flex-col relative transition-colors duration-300`}>
+      
+      {/* 🆕 IGN MODAL */}
       {showIgnModal && (
           <div className="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4">
               <div className={`${theme.card} rounded-2xl p-8 max-w-md w-full shadow-2xl text-center`}>
@@ -283,136 +258,142 @@ const LifeRPG = () => {
                   <h2 className={`text-2xl font-bold mb-2 ${theme.text}`}>Welcome, Hero!</h2>
                   <p className={`${theme.subtext} mb-6`}>What shall we call you in this world?</p>
                   <input type="text" value={newIgnInput} onChange={(e) => setNewIgnInput(e.target.value)} placeholder="Enter your IGN..." className={`w-full p-4 border-2 rounded-xl text-lg font-bold text-center focus:outline-none focus:border-blue-500 mb-6 ${theme.input}`} autoFocus />
-                  <button onClick={handleIgnSubmit} className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold text-lg hover:bg-blue-700 transition">Start Adventure</button>
+                  <button onClick={handleIgnSubmit} className={`w-full py-4 rounded-xl font-bold text-lg transition ${theme.button}`}>Start Adventure</button>
               </div>
           </div>
       )}
 
-      {/* SIDEBAR */}
-      <div className={`w-full md:w-64 ${theme.card} border-r ${theme.border} flex flex-col justify-between hidden md:flex`}>
-        <div>
-            <div className={`p-6 flex items-center gap-3 font-bold text-xl border-b ${theme.border}`}><Shield className="text-blue-600"/> LifeRPG</div>
-            <nav className="p-4 space-y-2">
-                <button onClick={() => setActiveTab("dashboard")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'dashboard' ? 'bg-blue-500 text-white font-bold shadow-md' : `${theme.subtext} ${theme.hover}`}`}><LayoutDashboard size={20}/> Dashboard</button>
-                <button onClick={() => setActiveTab("add")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'add' ? 'bg-blue-500 text-white font-bold shadow-md' : `${theme.subtext} ${theme.hover}`}`}><PenTool size={20}/> Quest Hub</button>
-                <button onClick={() => setActiveTab("settings")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'settings' ? 'bg-blue-500 text-white font-bold shadow-md' : `${theme.subtext} ${theme.hover}`}`}><Settings size={20}/> Settings</button>
-            </nav>
+      {/* 🔒 IF NOT LOGGED IN: SHOW LOGIN SCREEN */}
+      {!authToken ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+             <div className="mb-6 bg-blue-100 p-6 rounded-full inline-block animate-bounce">
+                <Sword size={64} className="text-blue-600" />
+             </div>
+             <h1 className="text-5xl font-black mb-2 tracking-tight">LifeRPG</h1>
+             <p className={`text-xl ${theme.subtext} mb-12 max-w-md`}>Gamify your life. Turn your daily tasks into epic quests and level up in the real world.</p>
+             
+             <button onClick={() => login()} className={`px-8 py-4 rounded-2xl font-bold text-lg flex items-center gap-3 shadow-lg transform hover:scale-105 transition-all ${theme.button}`}>
+                <Calendar size={24}/> Sync with Google Calendar
+             </button>
+             
+             <div className={`mt-12 flex gap-8 ${theme.subtext} text-sm font-bold opacity-60`}>
+                <div className="flex items-center gap-2"><CheckCircle size={16}/> Auto-Sync</div>
+                <div className="flex items-center gap-2"><Shield size={16}/> Secure Login</div>
+                <div className="flex items-center gap-2"><Zap size={16}/> Daily Rewards</div>
+             </div>
         </div>
-        <div className={`p-6 ${theme.bg} border-t ${theme.border}`}>
-            <div className={`text-sm font-bold ${theme.text} mb-1 flex items-center gap-2`}><User size={14}/> {ign}</div>
-            <div className={`text-xs font-bold ${theme.subtext} uppercase mb-2`}>Lvl {stats.level}</div>
-            <div className="mb-3"><div className="flex justify-between text-xs font-bold mb-1"><span>HP ❤️</span><span>{stats.hp}</span></div><div className="w-full bg-gray-200 rounded-full h-1.5"><div className="bg-red-500 h-1.5 rounded-full" style={{ width: `${(stats.hp / stats.maxHp) * 100}%` }}></div></div></div>
-            <div><div className="flex justify-between text-xs font-bold mb-1"><span>XP ⚡</span><span>{stats.exp} / {stats.maxExp}</span></div><div className="w-full bg-gray-200 rounded-full h-1.5"><div className="bg-blue-600 h-1.5 rounded-full" style={{ width: `${(stats.exp / stats.maxExp) * 100}%` }}></div></div></div>
-        </div>
-      </div>
+      ) : (
+        /* 🔓 IF LOGGED IN: SHOW DASHBOARD LAYOUT */
+        <div className="flex flex-col md:flex-row h-screen">
+          <div className={`w-full md:w-64 ${theme.card} border-r ${theme.border} flex flex-col justify-between hidden md:flex`}>
+            <div>
+                <div className={`p-6 flex items-center gap-3 font-bold text-xl border-b ${theme.border}`}><Shield className="text-blue-600"/> LifeRPG</div>
+                <nav className="p-4 space-y-2">
+                    <button onClick={() => setActiveTab("dashboard")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 text-white font-bold shadow-md' : `${theme.subtext} ${theme.hover}`}`}><LayoutDashboard size={20}/> Dashboard</button>
+                    <button onClick={() => setActiveTab("add")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'add' ? 'bg-blue-600 text-white font-bold shadow-md' : `${theme.subtext} ${theme.hover}`}`}><PenTool size={20}/> Quest Hub</button>
+                    <button onClick={() => setActiveTab("settings")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'settings' ? 'bg-blue-600 text-white font-bold shadow-md' : `${theme.subtext} ${theme.hover}`}`}><Settings size={20}/> Settings</button>
+                </nav>
+            </div>
+            <div className={`p-6 ${theme.bg} border-t ${theme.border}`}>
+                <div className={`text-sm font-bold ${theme.text} mb-1 flex items-center gap-2`}><User size={14}/> {ign}</div>
+                <div className={`text-xs font-bold ${theme.subtext} uppercase mb-2`}>Lvl {stats.level}</div>
+                <div className="mb-3"><div className="flex justify-between text-xs font-bold mb-1"><span>HP ❤️</span><span>{stats.hp}</span></div><div className="w-full bg-gray-200 rounded-full h-1.5"><div className="bg-red-500 h-1.5 rounded-full" style={{ width: `${(stats.hp / stats.maxHp) * 100}%` }}></div></div></div>
+                <div><div className="flex justify-between text-xs font-bold mb-1"><span>XP ⚡</span><span>{stats.exp} / {stats.maxExp}</span></div><div className="w-full bg-gray-200 rounded-full h-1.5"><div className="bg-blue-600 h-1.5 rounded-full" style={{ width: `${(stats.exp / stats.maxExp) * 100}%` }}></div></div></div>
+            </div>
+          </div>
 
-      <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className={`${theme.card} h-16 border-b ${theme.border} flex items-center justify-between px-6 shadow-sm z-10`}>
-            <div className="md:hidden font-bold text-lg"><Shield className="inline mr-2 text-blue-600"/> LifeRPG</div>
-            <div className="hidden md:block font-bold text-lg capitalize">{activeTab}</div>
-            {authToken ? ( <button onClick={logout} className="text-sm bg-red-100 text-red-600 px-4 py-2 rounded-lg hover:bg-red-200 transition flex items-center gap-2"><LogOut size={16}/> Logout</button> ) : ( <button onClick={() => login()} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2"><Calendar size={16}/> Sync Google</button> )}
-        </header>
+          <div className="flex-1 flex flex-col h-screen overflow-hidden">
+            <header className={`${theme.card} h-16 border-b ${theme.border} flex items-center justify-between px-6 shadow-sm z-10`}>
+                <div className="md:hidden font-bold text-lg"><Shield className="inline mr-2 text-blue-600"/> LifeRPG</div>
+                <div className="hidden md:block font-bold text-lg capitalize">{activeTab}</div>
+                <button onClick={logout} className="text-sm bg-red-100 text-red-600 px-4 py-2 rounded-lg hover:bg-red-200 transition flex items-center gap-2"><LogOut size={16}/> Logout</button>
+            </header>
 
-        <div className="flex-1 overflow-y-auto p-6">
-            {activeTab === 'dashboard' && (
-                <div className="max-w-4xl mx-auto">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                        <div className={`${theme.card} p-5 rounded-xl shadow-sm border border-blue-100`}>
-                            <div className="flex justify-between text-sm font-bold text-blue-500 mb-2"><span>Routines</span><span>{Math.round(routineProgress)}%</span></div>
-                            <div className="w-full bg-blue-100 rounded-full h-2 overflow-hidden"><div className="bg-blue-500 h-2 rounded-full transition-all duration-700" style={{ width: `${routineProgress}%` }}></div></div>
+            <div className="flex-1 overflow-y-auto p-6">
+                {activeTab === 'dashboard' && (
+                    <div className="max-w-4xl mx-auto">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                            <div className={`${theme.card} p-5 rounded-xl shadow-sm border border-blue-100`}>
+                                <div className="flex justify-between text-sm font-bold text-blue-500 mb-2"><span>Routines</span><span>{Math.round(routineProgress)}%</span></div>
+                                <div className="w-full bg-blue-100 rounded-full h-2 overflow-hidden"><div className="bg-blue-500 h-2 rounded-full transition-all duration-700" style={{ width: `${routineProgress}%` }}></div></div>
+                            </div>
+                            <div className={`${theme.card} p-5 rounded-xl shadow-sm border border-yellow-100`}>
+                                <div className="flex justify-between text-sm font-bold text-yellow-500 mb-2"><span>Main Quests</span><span>{Math.round(mainProgress)}%</span></div>
+                                <div className="w-full bg-yellow-100 rounded-full h-2 overflow-hidden"><div className="bg-yellow-500 h-2 rounded-full transition-all duration-700" style={{ width: `${mainProgress}%` }}></div></div>
+                            </div>
+                            <div className={`${theme.card} p-5 rounded-xl shadow-sm border border-gray-100`}>
+                                <div className="flex justify-between text-sm font-bold text-gray-500 mb-2"><span>Side Quests</span><span>{Math.round(sideProgress)}%</span></div>
+                                <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden"><div className="bg-gray-400 h-2 rounded-full transition-all duration-700" style={{ width: `${sideProgress}%` }}></div></div>
+                            </div>
                         </div>
-                        <div className={`${theme.card} p-5 rounded-xl shadow-sm border border-yellow-100`}>
-                            <div className="flex justify-between text-sm font-bold text-yellow-500 mb-2"><span>Main Quests</span><span>{Math.round(mainProgress)}%</span></div>
-                            <div className="w-full bg-yellow-100 rounded-full h-2 overflow-hidden"><div className="bg-yellow-500 h-2 rounded-full transition-all duration-700" style={{ width: `${mainProgress}%` }}></div></div>
-                        </div>
-                        <div className={`${theme.card} p-5 rounded-xl shadow-sm border border-gray-100`}>
-                            <div className="flex justify-between text-sm font-bold text-gray-500 mb-2"><span>Side Quests</span><span>{Math.round(sideProgress)}%</span></div>
-                            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden"><div className="bg-gray-400 h-2 rounded-full transition-all duration-700" style={{ width: `${sideProgress}%` }}></div></div>
-                        </div>
+                        {routineQuests.length > 0 && <div className="mb-8"><h3 className={`font-bold ${theme.subtext} uppercase tracking-wider text-sm mb-3 flex items-center gap-2`}><Repeat size={16}/> Daily Routines</h3>{routineQuests.map(q => <QuestItem key={q.id} q={q} />)}</div>}
+                        {mainQuests.length > 0 && <div className="mb-8"><h3 className={`font-bold ${theme.subtext} uppercase tracking-wider text-sm mb-3 flex items-center gap-2`}><Star size={16}/> Main Quests</h3>{mainQuests.map(q => <QuestItem key={q.id} q={q} />)}</div>}
+                        {sideQuests.length > 0 && <div className="mb-8"><h3 className={`font-bold ${theme.subtext} uppercase tracking-wider text-sm mb-3 flex items-center gap-2`}><ChevronRight size={16}/> Side Quests</h3>{sideQuests.map(q => <QuestItem key={q.id} q={q} />)}</div>}
+                        {cleanedQuests.length === 0 && <div className={`text-center py-10 ${theme.subtext}`}>No active quests. Sync Google or Add one!</div>}
                     </div>
+                )}
 
-                    {routineQuests.length > 0 && <div className="mb-8"><h3 className={`font-bold ${theme.subtext} uppercase tracking-wider text-sm mb-3 flex items-center gap-2`}><Repeat size={16}/> Daily Routines</h3>{routineQuests.map(q => <QuestItem key={q.id} q={q} />)}</div>}
-                    {mainQuests.length > 0 && <div className="mb-8"><h3 className={`font-bold ${theme.subtext} uppercase tracking-wider text-sm mb-3 flex items-center gap-2`}><Star size={16}/> Main Quests</h3>{mainQuests.map(q => <QuestItem key={q.id} q={q} />)}</div>}
-                    {sideQuests.length > 0 && <div className="mb-8"><h3 className={`font-bold ${theme.subtext} uppercase tracking-wider text-sm mb-3 flex items-center gap-2`}><ChevronRight size={16}/> Side Quests</h3>{sideQuests.map(q => <QuestItem key={q.id} q={q} />)}</div>}
-                    {cleanedQuests.length === 0 && <div className={`text-center py-10 ${theme.subtext}`}>No active quests. Sync Google or Add one!</div>}
-                </div>
-            )}
-
-            {activeTab === 'add' && (
-                <div className="max-w-2xl mx-auto">
-                    <div className={`${theme.card} p-8 rounded-xl shadow-sm border ${theme.border}`}>
-                        <h2 className={`text-2xl font-bold mb-6 flex items-center gap-2 ${theme.text}`}><PenTool/> Create New Quest</h2>
-                        <div className="space-y-6">
-                            <div><label className={`block text-sm font-bold mb-2 ${theme.subtext}`}>Quest Name</label><input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} placeholder="e.g. Morning Jog" className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme.input}`}/></div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div><label className={`block text-sm font-bold mb-2 ${theme.subtext}`}>Quest Type</label><select value={questType} onChange={(e) => setQuestType(e.target.value)} className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme.input}`}><option value="side">Side Quest (50 XP)</option><option value="main">Main Quest (200 XP)</option><option value="routine">Routine (Daily / 30 XP)</option></select></div>
-                                <div>
-                                    {questType === 'routine' ? (
-                                        <>
-                                            <label className={`block text-sm font-bold mb-2 ${theme.subtext}`}>Target Time</label>
-                                            <div className="relative">
-                                                <select value={timeFrame} onChange={(e) => setTimeFrame(e.target.value)} className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none font-bold ${theme.input}`}>
-                                                    {(() => { const t=[]; for(let i=0;i<24;i++) for(let j=0;j<60;j+=30) t.push(<option key={`${i}:${j}`} value={`${i.toString().padStart(2,'0')}:${j===0?'00':'30'}`}>{`${i%12||12}:${j===0?'00':'30'} ${i>=12?'PM':'AM'}`}</option>); return t; })()}
-                                                </select>
-                                                <Clock className="absolute right-4 top-4 text-blue-400" size={20}/>
-                                            </div>
-                                            <label className={`block text-sm font-bold mt-4 mb-2 ${theme.subtext}`}>Duration (Days)</label>
-                                            <input type="number" value={routineDays} onChange={(e) => setRoutineDays(e.target.value)} placeholder="e.g. 30" className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme.input}`}/>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <label className={`block text-sm font-bold mb-2 ${theme.subtext}`}>Deadline</label>
-                                            <input type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)} className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme.input}`}/>
-                                        </>
-                                    )}
+                {activeTab === 'add' && (
+                    <div className="max-w-2xl mx-auto">
+                        <div className={`${theme.card} p-8 rounded-xl shadow-sm border ${theme.border}`}>
+                            <h2 className={`text-2xl font-bold mb-6 flex items-center gap-2 ${theme.text}`}><PenTool/> Create New Quest</h2>
+                            <div className="space-y-6">
+                                <div><label className={`block text-sm font-bold mb-2 ${theme.subtext}`}>Quest Name</label><input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} placeholder="e.g. Morning Jog" className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme.input}`}/></div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div><label className={`block text-sm font-bold mb-2 ${theme.subtext}`}>Quest Type</label><select value={questType} onChange={(e) => setQuestType(e.target.value)} className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme.input}`}><option value="side">Side Quest (50 XP)</option><option value="main">Main Quest (200 XP)</option><option value="routine">Routine (Daily / 30 XP)</option></select></div>
+                                    <div>
+                                        {questType === 'routine' ? (
+                                            <>
+                                                <label className={`block text-sm font-bold mb-2 ${theme.subtext}`}>Target Time</label>
+                                                <div className="relative">
+                                                    <select value={timeFrame} onChange={(e) => setTimeFrame(e.target.value)} className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none font-bold ${theme.input}`}>
+                                                        {(() => { const t=[]; for(let i=0;i<24;i++) for(let j=0;j<60;j+=30) t.push(<option key={`${i}:${j}`} value={`${i.toString().padStart(2,'0')}:${j===0?'00':'30'}`}>{`${i%12||12}:${j===0?'00':'30'} ${i>=12?'PM':'AM'}`}</option>); return t; })()}
+                                                    </select>
+                                                    <Clock className="absolute right-4 top-4 text-blue-400" size={20}/>
+                                                </div>
+                                                <label className={`block text-sm font-bold mt-4 mb-2 ${theme.subtext}`}>Duration (Days)</label>
+                                                <input type="number" value={routineDays} onChange={(e) => setRoutineDays(e.target.value)} placeholder="e.g. 30" className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme.input}`}/>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <label className={`block text-sm font-bold mb-2 ${theme.subtext}`}>Deadline</label>
+                                                <input type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)} className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme.input}`}/>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
+                                <button onClick={addQuest} className={`w-full py-4 rounded-xl font-bold text-lg transition flex items-center justify-center gap-2 mt-4 ${theme.button}`}><Plus size={24}/> Initialize Quest</button>
                             </div>
-                            <button onClick={addQuest} className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold text-lg hover:bg-blue-700 transition flex items-center justify-center gap-2 mt-4"><Plus size={24}/> Initialize Quest</button>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
 
-            {activeTab === 'settings' && (
-                <div className="max-w-2xl mx-auto">
-                    <div className={`${theme.card} p-8 rounded-xl shadow-sm border ${theme.border}`}>
-                        <h2 className={`text-2xl font-bold mb-6 flex items-center gap-2 ${theme.text}`}><Settings/> Settings</h2>
-                        
-                        <h3 className={`font-bold uppercase tracking-wider text-sm mb-4 ${theme.subtext}`}>Visual Theme</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <button onClick={() => changeTheme('light')} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${theme.id === 'light' ? 'border-blue-500 bg-blue-50' : `border-gray-200 ${theme.hover}`}`}>
-                                <Sun size={24} className="text-orange-500"/>
-                                <span className="font-bold text-gray-800">Day Mode</span>
-                            </button>
-                            <button onClick={() => changeTheme('dark')} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${theme.id === 'dark' ? 'border-blue-500 bg-gray-700' : 'border-gray-600 bg-gray-800'}`}>
-                                <Moon size={24} className="text-purple-400"/>
-                                <span className="font-bold text-white">Dark Mode</span>
-                            </button>
-                            <button onClick={() => changeTheme('midnight')} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${theme.id === 'midnight' ? 'border-blue-500 bg-slate-700' : 'border-slate-700 bg-slate-900'}`}>
-                                <Monitor size={24} className="text-cyan-400"/>
-                                <span className="font-bold text-blue-100">Midnight</span>
-                            </button>
-                        </div>
-
-                        <h3 className={`font-bold uppercase tracking-wider text-sm mt-8 mb-4 ${theme.subtext}`}>Account</h3>
-                        <div className={`p-4 rounded-xl ${theme.bg} border ${theme.border} flex items-center justify-between`}>
-                            <div>
-                                <div className={`font-bold ${theme.text}`}>{ign}</div>
-                                <div className={`text-sm ${theme.subtext}`}>{userEmail}</div>
+                {activeTab === 'settings' && (
+                    <div className="max-w-2xl mx-auto">
+                        <div className={`${theme.card} p-8 rounded-xl shadow-sm border ${theme.border}`}>
+                            <h2 className={`text-2xl font-bold mb-6 flex items-center gap-2 ${theme.text}`}><Settings/> Settings</h2>
+                            <h3 className={`font-bold uppercase tracking-wider text-sm mb-4 ${theme.subtext}`}>Visual Theme</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <button onClick={() => changeTheme('light')} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${theme.id === 'light' ? 'border-blue-500 bg-blue-50' : `border-gray-200 ${theme.hover}`}`}><Sun size={24} className="text-orange-500"/><span className="font-bold text-gray-800">Day Mode</span></button>
+                                <button onClick={() => changeTheme('dark')} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${theme.id === 'dark' ? 'border-blue-500 bg-gray-700' : 'border-gray-600 bg-gray-800'}`}><Moon size={24} className="text-purple-400"/><span className="font-bold text-white">Dark Mode</span></button>
+                                <button onClick={() => changeTheme('midnight')} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${theme.id === 'midnight' ? 'border-blue-500 bg-slate-700' : 'border-slate-700 bg-slate-900'}`}><Monitor size={24} className="text-cyan-400"/><span className="font-bold text-blue-100">Midnight</span></button>
                             </div>
-                            <button onClick={logout} className="text-sm bg-red-100 text-red-600 px-4 py-2 rounded-lg hover:bg-red-200 font-bold">Log Out</button>
+                            <h3 className={`font-bold uppercase tracking-wider text-sm mt-8 mb-4 ${theme.subtext}`}>Account</h3>
+                            <div className={`p-4 rounded-xl ${theme.bg} border ${theme.border} flex items-center justify-between`}>
+                                <div><div className={`font-bold ${theme.text}`}>{ign}</div><div className={`text-sm ${theme.subtext}`}>{userEmail}</div></div>
+                                <button onClick={logout} className="text-sm bg-red-100 text-red-600 px-4 py-2 rounded-lg hover:bg-red-200 font-bold">Log Out</button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
-
+                )}
+            </div>
+          </div>
+          <div className={`w-64 ${theme.card} border-l ${theme.border} hidden xl:block p-4 overflow-y-auto`}>
+            <h3 className={`font-bold mb-4 flex items-center gap-2 text-sm uppercase tracking-wider ${theme.subtext}`}><Zap size={16}/> Activity Log</h3>
+            <div className="space-y-4">{logs.map(log => (<div key={log.id} className={`text-sm border-b pb-3 ${theme.border}`}><span className={`font-bold block ${theme.text}`}>{log.text}</span><span className={`text-xs ${theme.subtext}`}>{log.time}</span></div>))}</div>
+          </div>
         </div>
-      </div>
-      
-      <div className={`w-64 ${theme.card} border-l ${theme.border} hidden xl:block p-4 overflow-y-auto`}>
-        <h3 className={`font-bold mb-4 flex items-center gap-2 text-sm uppercase tracking-wider ${theme.subtext}`}><Zap size={16}/> Activity Log</h3>
-        <div className="space-y-4">{logs.map(log => (<div key={log.id} className={`text-sm border-b pb-3 ${theme.border}`}><span className={`font-bold block ${theme.text}`}>{log.text}</span><span className={`text-xs ${theme.subtext}`}>{log.time}</span></div>))}</div>
-      </div>
+      )}
     </div>
   );
 };
