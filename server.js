@@ -39,11 +39,10 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- 3. GOOGLE CONFIG (Updated for Cloud) ---
+// --- 3. GOOGLE CONFIG ---
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    // Uses Vercel URL if on cloud, or Localhost if on laptop
     process.env.CLIENT_URL || 'http://localhost:5173'
 );
 
@@ -73,7 +72,7 @@ app.post('/api/user/update', async (req, res) => {
     }
 });
 
-// SYNC CALENDAR (Updated: Looks back 24h for Timezone Fix)
+// SYNC CALENDAR (UPDATED: Now includes completed quests for Progress Bar)
 app.post('/api/sync-calendar', async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: "No Token" });
@@ -81,19 +80,18 @@ app.post('/api/sync-calendar', async (req, res) => {
     oauth2Client.setCredentials({ access_token: token });
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     
-    // TIMEZONE FIX: Look back 1 day to catch Philippines Morning Tasks
+    // Timezone Fix: Look back 24h
     const startOfSearch = new Date(); 
-    startOfSearch.setDate(startOfSearch.getDate() - 1); // Go back 24 hours
+    startOfSearch.setDate(startOfSearch.getDate() - 1); 
     startOfSearch.setHours(0, 0, 0, 0);
     
-    // For "Routine" filtering, we still check against the real "End of Today"
     const endOfToday = new Date();
     endOfToday.setHours(23, 59, 59, 999);
 
     try {
         const response = await calendar.events.list({
             calendarId: 'primary',
-            timeMin: startOfSearch.toISOString(), // Use the "Yesterday" time
+            timeMin: startOfSearch.toISOString(),
             maxResults: 100,
             singleEvents: true,
             orderBy: 'startTime',
@@ -101,13 +99,13 @@ app.post('/api/sync-calendar', async (req, res) => {
         
         const activeEvents = response.data.items
             .filter(event => {
-                if (!event.summary || event.summary.startsWith('✅')) return false;
+                // CHANGE 1: We DO NOT filter out '✅' anymore. We keep them!
+                if (!event.summary) return false;
 
                 const eventDate = new Date(event.start.dateTime || event.start.date);
                 const type = event.description || 'side';
 
-                // FILTER: Only show Routines if they are BEFORE the end of today
-                // (This hides routines for tomorrow, but keeps today's)
+                // Routine Filter: Only show if it belongs to Today
                 if (type === 'routine') {
                     return eventDate < endOfToday && eventDate > startOfSearch;
                 }
@@ -115,9 +113,12 @@ app.post('/api/sync-calendar', async (req, res) => {
             })
             .map(event => ({
                 id: event.id,
-                task: event.summary,
+                // CHANGE 2: Clean the name (remove ✅ for display)
+                task: event.summary.replace(/^✅\s*/, ''), 
                 time: event.start.dateTime || event.start.date,
-                type: event.description || 'side'
+                type: event.description || 'side',
+                // CHANGE 3: Add a "completed" flag so the Frontend knows
+                completed: event.summary.startsWith('✅')
             }));
 
         res.json({ success: true, events: activeEvents });
@@ -189,6 +190,7 @@ app.post('/api/complete-quest', async (req, res) => {
     }
 });
 
+// SEND EMAIL
 app.post('/api/send-reminder', async (req, res) => {
     const { email, task } = req.body;
     let transporter = nodemailer.createTransport({
