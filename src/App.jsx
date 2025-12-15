@@ -1,9 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Zap, Bell, Plus, Star, Repeat, LayoutDashboard, PenTool, CheckCircle, Calendar, Clock, ChevronRight, LogOut, Trash2, User, RotateCcw } from 'lucide-react';
+import { Shield, Zap, Bell, Plus, Star, Repeat, LayoutDashboard, PenTool, CheckCircle, Calendar, Clock, ChevronRight, LogOut, Trash2, User, RotateCcw, Settings, Moon, Sun, Monitor } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+// 🎨 THEME DEFINITIONS
+const THEMES = {
+  light: {
+    id: 'light', name: 'Day Mode', 
+    bg: 'bg-gray-50', card: 'bg-white', text: 'text-gray-800', subtext: 'text-gray-500', 
+    border: 'border-gray-200', input: 'bg-white border-gray-200', hover: 'hover:bg-gray-50'
+  },
+  dark: {
+    id: 'dark', name: 'Dark Mode', 
+    bg: 'bg-gray-900', card: 'bg-gray-800', text: 'text-white', subtext: 'text-gray-400', 
+    border: 'border-gray-700', input: 'bg-gray-700 border-gray-600 text-white', hover: 'hover:bg-gray-700'
+  },
+  midnight: {
+    id: 'midnight', name: 'Midnight', 
+    bg: 'bg-slate-900', card: 'bg-slate-800', text: 'text-blue-50', subtext: 'text-slate-400', 
+    border: 'border-slate-700', input: 'bg-slate-700 border-slate-600 text-white', hover: 'hover:bg-slate-700'
+  }
+};
 
 const LifeRPG = () => {
   // STATE
@@ -12,30 +31,38 @@ const LifeRPG = () => {
   const [quests, setQuests] = useState([]);
   const [logs, setLogs] = useState([{ id: 1, text: "System Initialized.", type: "gain", time: "Now" }]);
   const [authToken, setAuthToken] = useState(null);
+  
+  // USER & THEME
   const [userEmail, setUserEmail] = useState(null);
   const [ign, setIgn] = useState("Adventurer");
   const [showIgnModal, setShowIgnModal] = useState(false);
   const [newIgnInput, setNewIgnInput] = useState("");
+  const [theme, setTheme] = useState(THEMES.light); // Default Theme
+
+  // INPUTS
   const [newTask, setNewTask] = useState(""); 
   const [questType, setQuestType] = useState("side"); 
   const [deadline, setDeadline] = useState(""); 
   const [timeFrame, setTimeFrame] = useState("09:00"); 
   const [routineDays, setRoutineDays] = useState("");
 
-  const cleanedQuests = quests.filter((q, index, self) =>
+  // 🛡️ FRONTEND DEDUPLICATION
+  let cleanedQuests = quests.filter((q, index, self) =>
     index === self.findIndex((t) => (
       t.task === q.task && new Date(t.time).getTime() === new Date(q.time).getTime()
     ))
   );
 
-  // 🛡️ DATE HELPERS
+  // 🕒 AUTO-SORT BY TIME (Earliest First)
+  cleanedQuests.sort((a, b) => new Date(a.time) - new Date(b.time));
+
+  // HELPERS
   const isToday = (dateString) => {
       const d = new Date(dateString);
       const today = new Date();
       return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
   };
 
-  // PROGRESS
   const getProgress = (type) => {
       const typeQuests = cleanedQuests.filter(q => q.type === type && (isToday(q.time) || !q.completed));
       const total = typeQuests.length;
@@ -43,38 +70,28 @@ const LifeRPG = () => {
       const completed = typeQuests.filter(q => q.completed).length;
       return (completed / total) * 100;
   };
+
+  // PROGRESS BARS
   const routineProgress = getProgress('routine');
   const mainProgress = getProgress('main');
   const sideProgress = getProgress('side');
 
-  // 🛡️ VISIBILITY FILTER: Hide Completed tasks from yesterday!
-  // We keep: 1. Uncompleted tasks (Overdue or active)
-  //          2. Completed tasks ONLY if they are from TODAY
+  // FILTERS
   const filterList = (type) => cleanedQuests.filter(q => q.type === type && (!q.completed || isToday(q.time)));
-
   const routineQuests = filterList('routine');
   const mainQuests = filterList('main');
   const sideQuests = filterList('side');
 
-  const generateTimeOptions = () => {
-    const times = [];
-    for (let i = 0; i < 24; i++) {
-        for (let j = 0; j < 60; j += 30) {
-            const hour = i;
-            const minute = j === 0 ? "00" : "30";
-            const ampm = hour >= 12 ? "PM" : "AM";
-            const displayHour = hour % 12 || 12;
-            times.push({ value: `${hour.toString().padStart(2, '0')}:${minute}`, label: `${displayHour}:${minute} ${ampm}` });
-        }
-    }
-    return times;
-  };
-  const timeOptions = generateTimeOptions();
-
+  // INIT
   useEffect(() => {
     const restoreSession = async () => {
         const savedToken = localStorage.getItem('googleAuthToken');
         const savedEmail = localStorage.getItem('userEmail');
+        const savedTheme = localStorage.getItem('appTheme');
+
+        // Load Theme
+        if (savedTheme && THEMES[savedTheme]) setTheme(THEMES[savedTheme]);
+
         if (savedToken && savedEmail) {
             setAuthToken(savedToken);
             setUserEmail(savedEmail);
@@ -91,6 +108,12 @@ const LifeRPG = () => {
     };
     restoreSession();
   }, []);
+
+  const changeTheme = (themeKey) => {
+      setTheme(THEMES[themeKey]);
+      localStorage.setItem('appTheme', themeKey);
+      addLog(`Theme changed to ${THEMES[themeKey].name}`, "gain");
+  };
 
   const saveStats = async (newStats) => {
     setStats(newStats); 
@@ -223,34 +246,28 @@ const LifeRPG = () => {
 
   const addLog = (text, type) => { setLogs(prev => [{ id: Date.now(), text, type, time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }, ...prev]); };
 
+  // --- COMPONENTS ---
   const QuestItem = ({ q }) => (
-    <div className={`flex items-center justify-between p-4 rounded-xl shadow-sm bg-white mb-3 border-l-4 transition-all hover:translate-x-1 ${
-        q.type === 'main' ? 'border-yellow-500' : q.type === 'routine' ? 'border-blue-400' : 'border-gray-300'
-    } ${q.completed ? 'opacity-60 bg-gray-50' : ''}`}>
+    <div className={`flex items-center justify-between p-4 rounded-xl shadow-sm mb-3 border-l-4 transition-all hover:translate-x-1 ${theme.card} ${theme.border} ${
+        q.type === 'main' ? 'border-l-yellow-500' : q.type === 'routine' ? 'border-l-blue-400' : 'border-l-gray-300'
+    } ${q.completed ? 'opacity-60' : ''}`}>
         <div className="flex items-center gap-3">
             {q.type === 'main' && <Star className="text-yellow-500 fill-yellow-500" size={20}/>}
             {q.type === 'routine' && <Repeat className="text-blue-500" size={20}/>}
-            {q.type === 'side' && <div className="w-5 h-5 rounded-full border-2 border-gray-300"></div>}
+            {q.type === 'side' && <div className={`w-5 h-5 rounded-full border-2 ${theme.border}`}></div>}
             
             <div>
-                <p className={`font-bold text-gray-800 ${q.completed ? 'line-through text-gray-400' : ''}`}>{q.task}</p>
-                <p className="text-xs text-gray-400 font-bold tracking-wide uppercase mt-0.5 flex items-center gap-1">
+                <p className={`font-bold ${theme.text} ${q.completed ? 'line-through opacity-50' : ''}`}>{q.task}</p>
+                <p className={`text-xs ${theme.subtext} font-bold tracking-wide uppercase mt-0.5 flex items-center gap-1`}>
                    <Clock size={10}/> 
                    {new Date(q.time).toLocaleDateString([], {weekday: 'short', month: 'short', day: 'numeric'})} • {new Date(q.time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
                 </p>
             </div>
         </div>
         <div className="flex gap-2">
-            <button onClick={() => sendReminder(q)} className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg"><Bell size={18} /></button>
-            <button onClick={() => deleteQuest(q.id, q.type)} className="p-2 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={18} /></button>
-            <button 
-                onClick={() => toggleQuest(q)} 
-                className={`px-3 py-1.5 font-bold text-sm rounded-lg flex items-center gap-1 transition-all ${
-                    q.completed 
-                    ? 'bg-gray-200 text-gray-500 hover:bg-gray-300' 
-                    : 'bg-green-100 text-green-700 hover:bg-green-200'
-                }`}
-            >
+            <button onClick={() => sendReminder(q)} className={`p-2 ${theme.subtext} hover:text-blue-500 rounded-lg`}><Bell size={18} /></button>
+            <button onClick={() => deleteQuest(q.id, q.type)} className="p-2 text-red-300 hover:text-red-500 rounded-lg"><Trash2 size={18} /></button>
+            <button onClick={() => toggleQuest(q)} className={`px-3 py-1.5 font-bold text-sm rounded-lg flex items-center gap-1 transition-all ${q.completed ? 'bg-gray-200 text-gray-600' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
                 {q.completed ? <><RotateCcw size={14}/> Undo</> : <><CheckCircle size={14}/> Done</>}
             </button>
         </div>
@@ -258,119 +275,143 @@ const LifeRPG = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800 font-sans flex flex-col md:flex-row relative">
+    <div className={`min-h-screen ${theme.bg} ${theme.text} font-sans flex flex-col md:flex-row relative transition-colors duration-300`}>
       {showIgnModal && (
           <div className="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl text-center">
+              <div className={`${theme.card} rounded-2xl p-8 max-w-md w-full shadow-2xl text-center`}>
                   <div className="mx-auto bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mb-4"><User size={32} className="text-blue-600"/></div>
-                  <h2 className="text-2xl font-bold mb-2">Welcome, Hero!</h2>
-                  <p className="text-gray-500 mb-6">What shall we call you in this world?</p>
-                  <input type="text" value={newIgnInput} onChange={(e) => setNewIgnInput(e.target.value)} placeholder="Enter your IGN..." className="w-full p-4 border-2 border-gray-200 rounded-xl text-lg font-bold text-center focus:outline-none focus:border-blue-500 mb-6" autoFocus />
-                  <button onClick={handleIgnSubmit} className="w-full py-4 bg-black text-white rounded-xl font-bold text-lg hover:bg-gray-800 transition">Start Adventure</button>
+                  <h2 className={`text-2xl font-bold mb-2 ${theme.text}`}>Welcome, Hero!</h2>
+                  <p className={`${theme.subtext} mb-6`}>What shall we call you in this world?</p>
+                  <input type="text" value={newIgnInput} onChange={(e) => setNewIgnInput(e.target.value)} placeholder="Enter your IGN..." className={`w-full p-4 border-2 rounded-xl text-lg font-bold text-center focus:outline-none focus:border-blue-500 mb-6 ${theme.input}`} autoFocus />
+                  <button onClick={handleIgnSubmit} className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold text-lg hover:bg-blue-700 transition">Start Adventure</button>
               </div>
           </div>
       )}
-      <div className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col justify-between hidden md:flex">
+
+      {/* SIDEBAR */}
+      <div className={`w-full md:w-64 ${theme.card} border-r ${theme.border} flex flex-col justify-between hidden md:flex`}>
         <div>
-            <div className="p-6 flex items-center gap-3 font-bold text-xl border-b border-gray-100"><Shield className="text-blue-600"/> LifeRPG</div>
+            <div className={`p-6 flex items-center gap-3 font-bold text-xl border-b ${theme.border}`}><Shield className="text-blue-600"/> LifeRPG</div>
             <nav className="p-4 space-y-2">
-                <button onClick={() => setActiveTab("dashboard")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'dashboard' ? 'bg-blue-50 text-blue-600 font-bold' : 'text-gray-500 hover:bg-gray-50'}`}><LayoutDashboard size={20}/> Dashboard</button>
-                <button onClick={() => setActiveTab("add")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'add' ? 'bg-blue-50 text-blue-600 font-bold' : 'text-gray-500 hover:bg-gray-50'}`}><PenTool size={20}/> Quest Hub</button>
+                <button onClick={() => setActiveTab("dashboard")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'dashboard' ? 'bg-blue-500 text-white font-bold shadow-md' : `${theme.subtext} ${theme.hover}`}`}><LayoutDashboard size={20}/> Dashboard</button>
+                <button onClick={() => setActiveTab("add")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'add' ? 'bg-blue-500 text-white font-bold shadow-md' : `${theme.subtext} ${theme.hover}`}`}><PenTool size={20}/> Quest Hub</button>
+                <button onClick={() => setActiveTab("settings")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'settings' ? 'bg-blue-500 text-white font-bold shadow-md' : `${theme.subtext} ${theme.hover}`}`}><Settings size={20}/> Settings</button>
             </nav>
         </div>
-        <div className="p-6 bg-gray-50 border-t border-gray-200">
-            <div className="text-sm font-bold text-gray-800 mb-1 flex items-center gap-2"><User size={14}/> {ign}</div>
-            <div className="text-xs font-bold text-gray-400 uppercase mb-2">Lvl {stats.level}</div>
+        <div className={`p-6 ${theme.bg} border-t ${theme.border}`}>
+            <div className={`text-sm font-bold ${theme.text} mb-1 flex items-center gap-2`}><User size={14}/> {ign}</div>
+            <div className={`text-xs font-bold ${theme.subtext} uppercase mb-2`}>Lvl {stats.level}</div>
             <div className="mb-3"><div className="flex justify-between text-xs font-bold mb-1"><span>HP ❤️</span><span>{stats.hp}</span></div><div className="w-full bg-gray-200 rounded-full h-1.5"><div className="bg-red-500 h-1.5 rounded-full" style={{ width: `${(stats.hp / stats.maxHp) * 100}%` }}></div></div></div>
             <div><div className="flex justify-between text-xs font-bold mb-1"><span>XP ⚡</span><span>{stats.exp} / {stats.maxExp}</span></div><div className="w-full bg-gray-200 rounded-full h-1.5"><div className="bg-blue-600 h-1.5 rounded-full" style={{ width: `${(stats.exp / stats.maxExp) * 100}%` }}></div></div></div>
         </div>
       </div>
+
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="bg-white h-16 border-b border-gray-200 flex items-center justify-between px-6 shadow-sm z-10">
+        <header className={`${theme.card} h-16 border-b ${theme.border} flex items-center justify-between px-6 shadow-sm z-10`}>
             <div className="md:hidden font-bold text-lg"><Shield className="inline mr-2 text-blue-600"/> LifeRPG</div>
             <div className="hidden md:block font-bold text-lg capitalize">{activeTab}</div>
-            {authToken ? ( <button onClick={logout} className="text-sm bg-gray-100 text-red-600 px-4 py-2 rounded-lg hover:bg-red-50 transition flex items-center gap-2"><LogOut size={16}/> Logout</button> ) : ( <button onClick={() => login()} className="text-sm bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition flex items-center gap-2"><Calendar size={16}/> Sync Google</button> )}
+            {authToken ? ( <button onClick={logout} className="text-sm bg-red-100 text-red-600 px-4 py-2 rounded-lg hover:bg-red-200 transition flex items-center gap-2"><LogOut size={16}/> Logout</button> ) : ( <button onClick={() => login()} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2"><Calendar size={16}/> Sync Google</button> )}
         </header>
 
         <div className="flex-1 overflow-y-auto p-6">
             {activeTab === 'dashboard' && (
                 <div className="max-w-4xl mx-auto">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-blue-100">
-                            <div className="flex justify-between text-sm font-bold text-blue-600 mb-2"><span>Routines</span><span>{Math.round(routineProgress)}%</span></div>
-                            <div className="w-full bg-blue-50 rounded-full h-2 overflow-hidden"><div className="bg-blue-500 h-2 rounded-full transition-all duration-700" style={{ width: `${routineProgress}%` }}></div></div>
+                        <div className={`${theme.card} p-5 rounded-xl shadow-sm border border-blue-100`}>
+                            <div className="flex justify-between text-sm font-bold text-blue-500 mb-2"><span>Routines</span><span>{Math.round(routineProgress)}%</span></div>
+                            <div className="w-full bg-blue-100 rounded-full h-2 overflow-hidden"><div className="bg-blue-500 h-2 rounded-full transition-all duration-700" style={{ width: `${routineProgress}%` }}></div></div>
                         </div>
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-yellow-100">
-                            <div className="flex justify-between text-sm font-bold text-yellow-600 mb-2"><span>Main Quests</span><span>{Math.round(mainProgress)}%</span></div>
-                            <div className="w-full bg-yellow-50 rounded-full h-2 overflow-hidden"><div className="bg-yellow-500 h-2 rounded-full transition-all duration-700" style={{ width: `${mainProgress}%` }}></div></div>
+                        <div className={`${theme.card} p-5 rounded-xl shadow-sm border border-yellow-100`}>
+                            <div className="flex justify-between text-sm font-bold text-yellow-500 mb-2"><span>Main Quests</span><span>{Math.round(mainProgress)}%</span></div>
+                            <div className="w-full bg-yellow-100 rounded-full h-2 overflow-hidden"><div className="bg-yellow-500 h-2 rounded-full transition-all duration-700" style={{ width: `${mainProgress}%` }}></div></div>
                         </div>
-                        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-                            <div className="flex justify-between text-sm font-bold text-gray-600 mb-2"><span>Side Quests</span><span>{Math.round(sideProgress)}%</span></div>
-                            <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden"><div className="bg-gray-400 h-2 rounded-full transition-all duration-700" style={{ width: `${sideProgress}%` }}></div></div>
+                        <div className={`${theme.card} p-5 rounded-xl shadow-sm border border-gray-100`}>
+                            <div className="flex justify-between text-sm font-bold text-gray-500 mb-2"><span>Side Quests</span><span>{Math.round(sideProgress)}%</span></div>
+                            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden"><div className="bg-gray-400 h-2 rounded-full transition-all duration-700" style={{ width: `${sideProgress}%` }}></div></div>
                         </div>
                     </div>
 
-                    {routineQuests.length > 0 && (
-                        <div className="mb-8">
-                            <h3 className="font-bold text-gray-500 uppercase tracking-wider text-sm mb-3 flex items-center gap-2"><Repeat size={16}/> Daily Routines</h3>
-                            {routineQuests.map(q => <QuestItem key={q.id} q={q} />)}
-                        </div>
-                    )}
-                    {mainQuests.length > 0 && (
-                        <div className="mb-8">
-                            <h3 className="font-bold text-gray-500 uppercase tracking-wider text-sm mb-3 flex items-center gap-2"><Star size={16}/> Main Quests</h3>
-                            {mainQuests.map(q => <QuestItem key={q.id} q={q} />)}
-                        </div>
-                    )}
-                    {sideQuests.length > 0 && (
-                        <div className="mb-8">
-                            <h3 className="font-bold text-gray-500 uppercase tracking-wider text-sm mb-3 flex items-center gap-2"><ChevronRight size={16}/> Side Quests</h3>
-                            {sideQuests.map(q => <QuestItem key={q.id} q={q} />)}
-                        </div>
-                    )}
-                    {cleanedQuests.length === 0 && <div className="text-center py-10 text-gray-400">No active quests. Sync Google or Add one!</div>}
+                    {routineQuests.length > 0 && <div className="mb-8"><h3 className={`font-bold ${theme.subtext} uppercase tracking-wider text-sm mb-3 flex items-center gap-2`}><Repeat size={16}/> Daily Routines</h3>{routineQuests.map(q => <QuestItem key={q.id} q={q} />)}</div>}
+                    {mainQuests.length > 0 && <div className="mb-8"><h3 className={`font-bold ${theme.subtext} uppercase tracking-wider text-sm mb-3 flex items-center gap-2`}><Star size={16}/> Main Quests</h3>{mainQuests.map(q => <QuestItem key={q.id} q={q} />)}</div>}
+                    {sideQuests.length > 0 && <div className="mb-8"><h3 className={`font-bold ${theme.subtext} uppercase tracking-wider text-sm mb-3 flex items-center gap-2`}><ChevronRight size={16}/> Side Quests</h3>{sideQuests.map(q => <QuestItem key={q.id} q={q} />)}</div>}
+                    {cleanedQuests.length === 0 && <div className={`text-center py-10 ${theme.subtext}`}>No active quests. Sync Google or Add one!</div>}
                 </div>
             )}
 
             {activeTab === 'add' && (
                 <div className="max-w-2xl mx-auto">
-                    <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200">
-                        <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><PenTool/> Create New Quest</h2>
+                    <div className={`${theme.card} p-8 rounded-xl shadow-sm border ${theme.border}`}>
+                        <h2 className={`text-2xl font-bold mb-6 flex items-center gap-2 ${theme.text}`}><PenTool/> Create New Quest</h2>
                         <div className="space-y-6">
-                            <div><label className="block text-sm font-bold text-gray-700 mb-2">Quest Name</label><input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} placeholder="e.g. Morning Jog" className="w-full p-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"/></div>
+                            <div><label className={`block text-sm font-bold mb-2 ${theme.subtext}`}>Quest Name</label><input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} placeholder="e.g. Morning Jog" className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme.input}`}/></div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div><label className="block text-sm font-bold text-gray-700 mb-2">Quest Type</label><select value={questType} onChange={(e) => setQuestType(e.target.value)} className="w-full p-4 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"><option value="side">Side Quest (50 XP)</option><option value="main">Main Quest (200 XP)</option><option value="routine">Routine (Daily / 30 XP)</option></select></div>
+                                <div><label className={`block text-sm font-bold mb-2 ${theme.subtext}`}>Quest Type</label><select value={questType} onChange={(e) => setQuestType(e.target.value)} className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme.input}`}><option value="side">Side Quest (50 XP)</option><option value="main">Main Quest (200 XP)</option><option value="routine">Routine (Daily / 30 XP)</option></select></div>
                                 <div>
                                     {questType === 'routine' ? (
                                         <>
-                                            <label className="block text-sm font-bold text-gray-700 mb-2">Target Time</label>
+                                            <label className={`block text-sm font-bold mb-2 ${theme.subtext}`}>Target Time</label>
                                             <div className="relative">
-                                                <select value={timeFrame} onChange={(e) => setTimeFrame(e.target.value)} className="w-full p-4 border border-blue-200 bg-blue-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none font-bold text-blue-800">
-                                                    {timeOptions.map((time, index) => (<option key={index} value={time.value}>{time.label}</option>))}
+                                                <select value={timeFrame} onChange={(e) => setTimeFrame(e.target.value)} className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none font-bold ${theme.input}`}>
+                                                    {(() => { const t=[]; for(let i=0;i<24;i++) for(let j=0;j<60;j+=30) t.push(<option key={`${i}:${j}`} value={`${i.toString().padStart(2,'0')}:${j===0?'00':'30'}`}>{`${i%12||12}:${j===0?'00':'30'} ${i>=12?'PM':'AM'}`}</option>); return t; })()}
                                                 </select>
                                                 <Clock className="absolute right-4 top-4 text-blue-400" size={20}/>
                                             </div>
-                                            <label className="block text-sm font-bold text-gray-700 mt-4 mb-2">Duration (Days)</label>
-                                            <input type="number" value={routineDays} onChange={(e) => setRoutineDays(e.target.value)} placeholder="e.g. 30 (Leave empty for Forever)" className="w-full p-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-500"/>
+                                            <label className={`block text-sm font-bold mt-4 mb-2 ${theme.subtext}`}>Duration (Days)</label>
+                                            <input type="number" value={routineDays} onChange={(e) => setRoutineDays(e.target.value)} placeholder="e.g. 30" className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme.input}`}/>
                                         </>
                                     ) : (
                                         <>
-                                            <label className="block text-sm font-bold text-gray-700 mb-2">Deadline</label>
-                                            <input type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="w-full p-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-500"/>
+                                            <label className={`block text-sm font-bold mb-2 ${theme.subtext}`}>Deadline</label>
+                                            <input type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)} className={`w-full p-4 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme.input}`}/>
                                         </>
                                     )}
                                 </div>
                             </div>
-                            <button onClick={addQuest} className="w-full py-4 bg-black text-white rounded-xl font-bold text-lg hover:bg-gray-800 transition flex items-center justify-center gap-2 mt-4"><Plus size={24}/> Initialize Quest</button>
+                            <button onClick={addQuest} className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold text-lg hover:bg-blue-700 transition flex items-center justify-center gap-2 mt-4"><Plus size={24}/> Initialize Quest</button>
                         </div>
                     </div>
                 </div>
             )}
+
+            {activeTab === 'settings' && (
+                <div className="max-w-2xl mx-auto">
+                    <div className={`${theme.card} p-8 rounded-xl shadow-sm border ${theme.border}`}>
+                        <h2 className={`text-2xl font-bold mb-6 flex items-center gap-2 ${theme.text}`}><Settings/> Settings</h2>
+                        
+                        <h3 className={`font-bold uppercase tracking-wider text-sm mb-4 ${theme.subtext}`}>Visual Theme</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <button onClick={() => changeTheme('light')} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${theme.id === 'light' ? 'border-blue-500 bg-blue-50' : `border-gray-200 ${theme.hover}`}`}>
+                                <Sun size={24} className="text-orange-500"/>
+                                <span className="font-bold text-gray-800">Day Mode</span>
+                            </button>
+                            <button onClick={() => changeTheme('dark')} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${theme.id === 'dark' ? 'border-blue-500 bg-gray-700' : 'border-gray-600 bg-gray-800'}`}>
+                                <Moon size={24} className="text-purple-400"/>
+                                <span className="font-bold text-white">Dark Mode</span>
+                            </button>
+                            <button onClick={() => changeTheme('midnight')} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-2 transition-all ${theme.id === 'midnight' ? 'border-blue-500 bg-slate-700' : 'border-slate-700 bg-slate-900'}`}>
+                                <Monitor size={24} className="text-cyan-400"/>
+                                <span className="font-bold text-blue-100">Midnight</span>
+                            </button>
+                        </div>
+
+                        <h3 className={`font-bold uppercase tracking-wider text-sm mt-8 mb-4 ${theme.subtext}`}>Account</h3>
+                        <div className={`p-4 rounded-xl ${theme.bg} border ${theme.border} flex items-center justify-between`}>
+                            <div>
+                                <div className={`font-bold ${theme.text}`}>{ign}</div>
+                                <div className={`text-sm ${theme.subtext}`}>{userEmail}</div>
+                            </div>
+                            <button onClick={logout} className="text-sm bg-red-100 text-red-600 px-4 py-2 rounded-lg hover:bg-red-200 font-bold">Log Out</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div>
       </div>
-      <div className="w-64 bg-white border-l border-gray-200 hidden xl:block p-4 overflow-y-auto">
-        <h3 className="font-bold mb-4 flex items-center gap-2 text-sm text-gray-500 uppercase tracking-wider"><Zap size={16}/> Activity Log</h3>
-        <div className="space-y-4">{logs.map(log => (<div key={log.id} className="text-sm border-b border-gray-100 pb-3"><span className="font-bold text-gray-800 block">{log.text}</span><span className="text-xs text-gray-400">{log.time}</span></div>))}</div>
+      
+      <div className={`w-64 ${theme.card} border-l ${theme.border} hidden xl:block p-4 overflow-y-auto`}>
+        <h3 className={`font-bold mb-4 flex items-center gap-2 text-sm uppercase tracking-wider ${theme.subtext}`}><Zap size={16}/> Activity Log</h3>
+        <div className="space-y-4">{logs.map(log => (<div key={log.id} className={`text-sm border-b pb-3 ${theme.border}`}><span className={`font-bold block ${theme.text}`}>{log.text}</span><span className={`text-xs ${theme.subtext}`}>{log.time}</span></div>))}</div>
       </div>
     </div>
   );
