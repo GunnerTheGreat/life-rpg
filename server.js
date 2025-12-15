@@ -20,8 +20,10 @@ if (process.env.MONGO_URI) {
     console.log("⚠️ MONGO_URI missing in .env file");
 }
 
+// 🆕 UPDATED USER MODEL (Now stores Email & IGN)
 const userSchema = new mongoose.Schema({
-    userId: { type: String, default: "guest" }, // Changed default to guest
+    email: { type: String, required: true, unique: true }, // The Google Email
+    ign: { type: String, default: "Adventurer" },          // In-Game Name
     stats: {
         level: { type: Number, default: 1 },
         coins: { type: Number, default: 0 },
@@ -40,52 +42,45 @@ const oauth2Client = new google.auth.OAuth2(
     process.env.CLIENT_URL || 'http://localhost:5173'
 );
 
-// --- HELPER: GET EMAIL FROM TOKEN ---
-// This asks Google: "Who does this token belong to?"
-const getUserEmail = async (token) => {
-    if (!token) return "guest"; // If no login, use "guest" save file
-    try {
-        oauth2Client.setCredentials({ access_token: token });
-        const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
-        const userInfo = await oauth2.userinfo.get();
-        return userInfo.data.email; // Returns "gunner@gmail.com"
-    } catch (e) {
-        console.error("Auth Error:", e.message);
-        return "guest";
-    }
-};
-
 // --- 3. API ROUTES ---
 
-// LOAD GAME (Updated to support Multiple Users)
-// We changed this from GET to POST so we can securely send the Token
-app.post('/api/user/load', async (req, res) => {
+// 🆕 LOGIN / CHECK USER
+// Returns the user if found, or "null" if they are new.
+app.post('/api/user/login', async (req, res) => {
+    const { email } = req.body;
     try {
-        const { token } = req.body;
-        const email = await getUserEmail(token); // Get the real email
-
-        let user = await User.findOne({ userId: email });
-        if (!user) {
-            // Create new save file for this specific email
-            console.log(`✨ Creating new Hero: ${email}`);
-            user = await User.create({ userId: email });
+        const user = await User.findOne({ email });
+        if (user) {
+            res.json({ exists: true, user });
+        } else {
+            res.json({ exists: false }); // Tells Frontend to ask for IGN
         }
-        res.json(user.stats);
     } catch (e) { res.status(500).json({ error: "DB Error" }); }
 });
 
-// SAVE GAME (Updated)
+// 🆕 SIGNUP (CREATE CHARACTER)
+app.post('/api/user/signup', async (req, res) => {
+    const { email, ign } = req.body;
+    try {
+        const newUser = await User.create({ 
+            email, 
+            ign,
+            stats: { level: 1, coins: 0, hp: 1000, maxHp: 1000, exp: 0, maxExp: 1000 }
+        });
+        res.json({ success: true, user: newUser });
+    } catch (e) { res.status(500).json({ error: "Creation Error" }); }
+});
+
+// SAVE STATS (Now looks up by EMAIL)
 app.post('/api/user/update', async (req, res) => {
     try {
-        const { stats, token } = req.body;
-        const email = await getUserEmail(token); // Ensure we save to the right person
-        
-        await User.findOneAndUpdate({ userId: email }, { stats });
+        const { email, stats } = req.body;
+        await User.findOneAndUpdate({ email }, { stats });
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: "Save Error" }); }
 });
 
-// SYNC CALENDAR (Deduplicated)
+// SYNC CALENDAR (DEDUPLICATED)
 app.post('/api/sync-calendar', async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: "No Token" });
@@ -125,7 +120,6 @@ app.post('/api/sync-calendar', async (req, res) => {
                 completed: event.summary.startsWith('✅')
             }));
 
-        // Deduplication
         const uniqueEvents = [];
         const seen = new Set();
         rawEvents.forEach(event => {
@@ -146,7 +140,7 @@ app.post('/api/sync-calendar', async (req, res) => {
     }
 });
 
-// ADD QUEST
+// ADD QUEST (With Days)
 app.post('/api/add-quest', async (req, res) => {
     const { token, task, type, deadline, days } = req.body;
     oauth2Client.setCredentials({ access_token: token });
@@ -177,6 +171,7 @@ app.post('/api/add-quest', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, error: error.message }); }
 });
 
+// COMPLETE QUEST
 app.post('/api/complete-quest', async (req, res) => {
     const { token, eventId, task } = req.body;
     oauth2Client.setCredentials({ access_token: token });
@@ -187,6 +182,7 @@ app.post('/api/complete-quest', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false }); }
 });
 
+// DELETE QUEST
 app.post('/api/delete-quest', async (req, res) => {
     const { token, eventId, type } = req.body;
     oauth2Client.setCredentials({ access_token: token });

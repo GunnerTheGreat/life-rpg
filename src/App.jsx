@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Zap, Bell, Plus, Star, Repeat, LayoutDashboard, PenTool, CheckCircle, Calendar, Clock, ChevronRight, LogOut, Trash2 } from 'lucide-react';
+import { Shield, Zap, Bell, Plus, Star, Repeat, LayoutDashboard, PenTool, CheckCircle, Calendar, Clock, ChevronRight, LogOut, Trash2, User } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 
+// 🌎 AUTOMATIC URL SWITCHER
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 const LifeRPG = () => {
@@ -12,6 +13,12 @@ const LifeRPG = () => {
   const [quests, setQuests] = useState([]);
   const [logs, setLogs] = useState([{ id: 1, text: "System Initialized.", type: "gain", time: "Now" }]);
   const [authToken, setAuthToken] = useState(null);
+  
+  // 🆕 USER IDENTITY STATE
+  const [userEmail, setUserEmail] = useState(null);
+  const [ign, setIgn] = useState("Adventurer"); // In-Game Name
+  const [showIgnModal, setShowIgnModal] = useState(false); // Controls the popup
+  const [newIgnInput, setNewIgnInput] = useState("");
 
   // FORM INPUTS
   const [newTask, setNewTask] = useState(""); 
@@ -20,7 +27,7 @@ const LifeRPG = () => {
   const [timeFrame, setTimeFrame] = useState("09:00"); 
   const [routineDays, setRoutineDays] = useState("");
 
-  // DEDUPLICATION FILTER
+  // 🛡️ FRONTEND DEDUPLICATION
   const cleanedQuests = quests.filter((q, index, self) =>
     index === self.findIndex((t) => (
       t.task === q.task && new Date(t.time).getTime() === new Date(q.time).getTime()
@@ -50,62 +57,107 @@ const LifeRPG = () => {
   };
   const timeOptions = generateTimeOptions();
 
-  // --- INITIAL LOAD ---
+  // --- 1. INITIAL LOAD ---
   useEffect(() => {
-    const init = async () => {
-        // 1. Try to recover session
+    const restoreSession = async () => {
         const savedToken = localStorage.getItem('googleAuthToken');
-        if (savedToken) {
+        const savedEmail = localStorage.getItem('userEmail');
+        
+        if (savedToken && savedEmail) {
             setAuthToken(savedToken);
-            addLog("Restoring Session...", "gain");
-            // Load THAT user's data
-            await loadUserData(savedToken);
-            await fetchCalendar(savedToken);
-        } else {
-            // Load "Guest" data if no login
-            await loadUserData(null);
+            setUserEmail(savedEmail);
+            
+            // Fetch User Data using the Email
+            try {
+                const res = await axios.post(`${API_URL}/api/user/login`, { email: savedEmail });
+                if (res.data.exists) {
+                    setStats(res.data.user.stats);
+                    setIgn(res.data.user.ign);
+                    addLog(`Welcome back, ${res.data.user.ign}!`, "gain");
+                    fetchCalendar(savedToken);
+                } else {
+                    // If local storage has email but DB doesn't (rare), clear it
+                    logout();
+                }
+            } catch (err) { console.error("Restore failed"); }
         }
     };
-    init();
+    restoreSession();
   }, []);
-
-  // --- NEW FUNCTION: Load User Data ---
-  const loadUserData = async (token) => {
-      try {
-          // We send the token (if it exists) so the server knows WHO to load
-          const res = await axios.post(`${API_URL}/api/user/load`, { token });
-          if (res.data) setStats(res.data);
-      } catch (err) { console.error("Load Error", err); }
-  };
 
   const saveStats = async (newStats) => {
     setStats(newStats); 
-    try { 
-        // Send token so we save to the correct user
-        await axios.post(`${API_URL}/api/user/update`, { stats: newStats, token: authToken }); 
-    } catch (err) {}
+    // 🆕 Save to DB using the specific User Email
+    if (userEmail) {
+        try { await axios.post(`${API_URL}/api/user/update`, { email: userEmail, stats: newStats }); } catch (err) {}
+    }
   };
 
+  // --- 2. GOOGLE LOGIN FLOW ---
   const login = useGoogleLogin({
     onSuccess: async (res) => {
-      localStorage.setItem('googleAuthToken', res.access_token);
-      setAuthToken(res.access_token);
-      addLog("Google Calendar Synced", "gain");
+      const token = res.access_token;
       
-      // RELOAD EVERYTHING FOR THE NEW USER
-      await loadUserData(res.access_token); // Load THIS user's XP/Coins
-      await fetchCalendar(res.access_token); // Load THIS user's Quests
+      // A. Get User Info from Google (to know WHO is logging in)
+      try {
+          const googleUser = await axios.get('https://www.googleapis.com/oauth2/v1/userinfo', {
+              headers: { Authorization: `Bearer ${token}` }
+          });
+          const email = googleUser.data.email;
+          
+          localStorage.setItem('googleAuthToken', token);
+          localStorage.setItem('userEmail', email);
+          setAuthToken(token);
+          setUserEmail(email);
+
+          // B. Check our DB for this user
+          const dbCheck = await axios.post(`${API_URL}/api/user/login`, { email });
+          
+          if (dbCheck.data.exists) {
+              // RETURNING USER: Load data
+              setStats(dbCheck.data.user.stats);
+              setIgn(dbCheck.data.user.ign);
+              fetchCalendar(token);
+              addLog(`Welcome back, ${dbCheck.data.user.ign}!`, "gain");
+          } else {
+              // NEW USER: Show IGN Modal
+              setShowIgnModal(true);
+          }
+
+      } catch (err) { console.error("Login Error", err); }
     },
-    scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email' // Added Email Scope
+    scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email'
   });
 
-  const logout = async () => {
+  // --- 3. CREATE CHARACTER (IGN SUBMIT) ---
+  const handleIgnSubmit = async () => {
+      if (!newIgnInput) return alert("Please enter a name!");
+      
+      try {
+          const res = await axios.post(`${API_URL}/api/user/signup`, { 
+              email: userEmail, 
+              ign: newIgnInput 
+          });
+          
+          if (res.data.success) {
+              setStats(res.data.user.stats);
+              setIgn(res.data.user.ign);
+              setShowIgnModal(false); // Close modal
+              fetchCalendar(authToken); // Sync calendar now that we are set up
+              addLog(`Character Created: ${newIgnInput}`, "gain");
+          }
+      } catch (err) { alert("Failed to create character"); }
+  };
+
+  const logout = () => {
       localStorage.removeItem('googleAuthToken');
+      localStorage.removeItem('userEmail');
       setAuthToken(null);
+      setUserEmail(null);
       setQuests([]);
+      setStats({ level: 1, coins: 0, hp: 1000, maxHp: 1000, exp: 0, maxExp: 1000 });
+      setIgn("Adventurer");
       addLog("Logged out.", "loss");
-      // Revert to Guest Stats
-      await loadUserData(null);
   };
 
   const fetchCalendar = async (token) => {
@@ -113,13 +165,10 @@ const LifeRPG = () => {
       const res = await axios.post(`${API_URL}/api/sync-calendar`, { token });
       if(res.data.success) {
         setQuests(res.data.events); 
-        if(!authToken) addLog("Auto-Sync Complete!", "gain");
+        if(!authToken) addLog("Synced with Google!", "gain");
       }
     } catch (err) { 
-        if (err.response && err.response.status === 500) {
-            localStorage.removeItem('googleAuthToken');
-            setAuthToken(null);
-        }
+        if (err.response && err.response.status === 500) logout();
     }
   };
 
@@ -145,12 +194,9 @@ const LifeRPG = () => {
 
   const completeQuest = async (id, taskName, type) => {
     setQuests(prev => prev.map(q => q.id === id ? { ...q, completed: true } : q));
-    
     let xpGain = type === 'main' ? 200 : type === 'routine' ? 30 : 50;
     let coinGain = type === 'main' ? 100 : 20;
-
     const newStats = { ...stats, exp: stats.exp + xpGain, coins: stats.coins + coinGain };
-
     if (newStats.exp >= newStats.maxExp) {
         newStats.level += 1;
         newStats.exp = newStats.exp - newStats.maxExp;
@@ -158,16 +204,10 @@ const LifeRPG = () => {
         newStats.hp = newStats.maxHp; 
         addLog(`LEVEL UP! You are now Level ${newStats.level}`, "gain");
     }
-
     saveStats(newStats); 
     addLog(`Completed ${type} quest! +${xpGain} XP`, 'gain');
-
     if (authToken) {
-        try {
-            await axios.post(`${API_URL}/api/complete-quest`, {
-                token: authToken, eventId: id, task: taskName
-            });
-        } catch (err) {}
+        try { await axios.post(`${API_URL}/api/complete-quest`, { token: authToken, eventId: id, task: taskName }); } catch (err) {}
     }
   };
 
@@ -175,11 +215,7 @@ const LifeRPG = () => {
       setQuests(prev => prev.filter(q => q.id !== id));
       addLog(`Deleted ${type} quest.`, 'loss');
       if (authToken) {
-          try {
-              await axios.post(`${API_URL}/api/delete-quest`, {
-                  token: authToken, eventId: id, type: type
-              });
-          } catch (err) { console.error("Failed to delete", err); }
+          try { await axios.post(`${API_URL}/api/delete-quest`, { token: authToken, eventId: id, type: type }); } catch (err) { console.error("Failed to delete", err); }
       }
   };
 
@@ -218,7 +254,35 @@ const LifeRPG = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800 font-sans flex flex-col md:flex-row">
+    <div className="min-h-screen bg-gray-50 text-gray-800 font-sans flex flex-col md:flex-row relative">
+      
+      {/* 🆕 IGN MODAL FOR NEW USERS */}
+      {showIgnModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl text-center">
+                  <div className="mx-auto bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mb-4">
+                    <User size={32} className="text-blue-600"/>
+                  </div>
+                  <h2 className="text-2xl font-bold mb-2">Welcome, Hero!</h2>
+                  <p className="text-gray-500 mb-6">What shall we call you in this world?</p>
+                  
+                  <input 
+                    type="text" 
+                    value={newIgnInput}
+                    onChange={(e) => setNewIgnInput(e.target.value)}
+                    placeholder="Enter your IGN..." 
+                    className="w-full p-4 border-2 border-gray-200 rounded-xl text-lg font-bold text-center focus:outline-none focus:border-blue-500 mb-6"
+                    autoFocus
+                  />
+                  
+                  <button onClick={handleIgnSubmit} className="w-full py-4 bg-black text-white rounded-xl font-bold text-lg hover:bg-gray-800 transition">
+                      Start Adventure
+                  </button>
+              </div>
+          </div>
+      )}
+
+      {/* SIDEBAR */}
       <div className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col justify-between hidden md:flex">
         <div>
             <div className="p-6 flex items-center gap-3 font-bold text-xl border-b border-gray-100"><Shield className="text-blue-600"/> LifeRPG</div>
@@ -228,7 +292,9 @@ const LifeRPG = () => {
             </nav>
         </div>
         <div className="p-6 bg-gray-50 border-t border-gray-200">
-            <div className="text-xs font-bold text-gray-400 uppercase mb-2">Status (Lvl {stats.level})</div>
+            {/* 🆕 IGN DISPLAY */}
+            <div className="text-sm font-bold text-gray-800 mb-1 flex items-center gap-2"><User size={14}/> {ign}</div>
+            <div className="text-xs font-bold text-gray-400 uppercase mb-2">Lvl {stats.level}</div>
             <div className="mb-3"><div className="flex justify-between text-xs font-bold mb-1"><span>HP ❤️</span><span>{stats.hp}</span></div><div className="w-full bg-gray-200 rounded-full h-1.5"><div className="bg-red-500 h-1.5 rounded-full" style={{ width: `${(stats.hp / stats.maxHp) * 100}%` }}></div></div></div>
             <div><div className="flex justify-between text-xs font-bold mb-1"><span>XP ⚡</span><span>{stats.exp} / {stats.maxExp}</span></div><div className="w-full bg-gray-200 rounded-full h-1.5"><div className="bg-blue-600 h-1.5 rounded-full" style={{ width: `${(stats.exp / stats.maxExp) * 100}%` }}></div></div></div>
         </div>
@@ -310,6 +376,12 @@ const LifeRPG = () => {
                 </div>
             )}
         </div>
+      </div>
+      
+      {/* LOGS (Visible on Desktop) */}
+      <div className="w-64 bg-white border-l border-gray-200 hidden xl:block p-4 overflow-y-auto">
+        <h3 className="font-bold mb-4 flex items-center gap-2 text-sm text-gray-500 uppercase tracking-wider"><Zap size={16}/> Activity Log</h3>
+        <div className="space-y-4">{logs.map(log => (<div key={log.id} className="text-sm border-b border-gray-100 pb-3"><span className="font-bold text-gray-800 block">{log.text}</span><span className="text-xs text-gray-400">{log.time}</span></div>))}</div>
       </div>
     </div>
   );
