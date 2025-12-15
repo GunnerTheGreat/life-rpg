@@ -39,11 +39,12 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- 3. GOOGLE CONFIG ---
+// --- 3. GOOGLE CONFIG (Updated for Cloud) ---
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    process.env.CLIENT_URL || 'http://localhost:5173' // Uses cloud URL if available
+    // Uses Vercel URL if on cloud, or Localhost if on laptop
+    process.env.CLIENT_URL || 'http://localhost:5173'
 );
 
 // --- 4. API ROUTES ---
@@ -72,7 +73,7 @@ app.post('/api/user/update', async (req, res) => {
     }
 });
 
-// SYNC CALENDAR (UPDATED: Filters out future routines)
+// SYNC CALENDAR (Updated: Looks back 24h for Timezone Fix)
 app.post('/api/sync-calendar', async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: "No Token" });
@@ -80,38 +81,37 @@ app.post('/api/sync-calendar', async (req, res) => {
     oauth2Client.setCredentials({ access_token: token });
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     
-    // Time Definitions
-    const startOfDay = new Date(); 
-    startOfDay.setHours(0, 0, 0, 0);
+    // TIMEZONE FIX: Look back 1 day to catch Philippines Morning Tasks
+    const startOfSearch = new Date(); 
+    startOfSearch.setDate(startOfSearch.getDate() - 1); // Go back 24 hours
+    startOfSearch.setHours(0, 0, 0, 0);
     
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
+    // For "Routine" filtering, we still check against the real "End of Today"
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
 
     try {
         const response = await calendar.events.list({
             calendarId: 'primary',
-            timeMin: startOfDay.toISOString(),
-            maxResults: 100, // Fetch more to ensure we catch everything
+            timeMin: startOfSearch.toISOString(), // Use the "Yesterday" time
+            maxResults: 100,
             singleEvents: true,
             orderBy: 'startTime',
         });
         
         const activeEvents = response.data.items
             .filter(event => {
-                // 1. Remove events marked as Done (Start with ✅)
                 if (!event.summary || event.summary.startsWith('✅')) return false;
 
                 const eventDate = new Date(event.start.dateTime || event.start.date);
                 const type = event.description || 'side';
 
-                // 2. SMART FILTER:
-                // If it is a 'routine', ONLY show it if it happens TODAY.
-                // If it is 'main' or 'side', show it even if it's in the future.
+                // FILTER: Only show Routines if they are BEFORE the end of today
+                // (This hides routines for tomorrow, but keeps today's)
                 if (type === 'routine') {
-                    return eventDate < endOfDay;
+                    return eventDate < endOfToday && eventDate > startOfSearch;
                 }
-                
-                return true; // Keep all other quests
+                return true; 
             })
             .map(event => ({
                 id: event.id,
@@ -161,7 +161,6 @@ app.post('/api/add-quest', async (req, res) => {
             calendarId: 'primary',
             requestBody: event,
         });
-        console.log("✅ Quest Saved to Google!");
         res.json({ success: true });
     } catch (error) {
         console.error("❌ Google Calendar Error:", error.message);
@@ -190,7 +189,6 @@ app.post('/api/complete-quest', async (req, res) => {
     }
 });
 
-// SEND EMAIL
 app.post('/api/send-reminder', async (req, res) => {
     const { email, task } = req.body;
     let transporter = nodemailer.createTransport({
@@ -198,20 +196,16 @@ app.post('/api/send-reminder', async (req, res) => {
         auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
         tls: { rejectUnauthorized: false }
     });
-
     try {
         await transporter.sendMail({
             from: '"Life RPG" <noreply@liferpg.com>',
             to: email,
-            subject: "⚔️ Quest Reminder: " + task,
-            text: `Hero! You have a task due soon: ${task}.`
+            subject: "Quest Reminder: " + task,
+            text: `Hero! Task due: ${task}.`
         });
         res.json({ success: true });
-    } catch (error) {
-        console.error("Email Error:", error.message);
-        res.status(500).json({ error: error.message });
-    }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
