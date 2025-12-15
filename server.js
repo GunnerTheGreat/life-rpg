@@ -42,7 +42,6 @@ const oauth2Client = new google.auth.OAuth2(
 
 // --- 3. API ROUTES ---
 
-// LOAD GAME
 app.get('/api/user', async (req, res) => {
     try {
         let user = await User.findOne({ userId: "player1" });
@@ -51,7 +50,6 @@ app.get('/api/user', async (req, res) => {
     } catch (e) { res.status(500).json({ error: "DB Error" }); }
 });
 
-// SAVE GAME
 app.post('/api/user/update', async (req, res) => {
     try {
         const { stats } = req.body;
@@ -60,7 +58,7 @@ app.post('/api/user/update', async (req, res) => {
     } catch (e) { res.status(500).json({ error: "Save Error" }); }
 });
 
-// SYNC CALENDAR (Updated with DUPLICATE REMOVER)
+// SYNC CALENDAR (SUPER AGGRESSIVE DEDUPE)
 app.post('/api/sync-calendar', async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: "No Token" });
@@ -103,13 +101,20 @@ app.post('/api/sync-calendar', async (req, res) => {
                 completed: event.summary.startsWith('✅')
             }));
 
-        // 🛡️ DEDUPLICATION LOGIC
-        // We look at the "Task Name" + "Time". If we've seen it before, we skip it.
+        // 🛡️ SUPER DEDUPLICATION LOGIC
         const uniqueEvents = [];
         const seen = new Set();
 
         rawEvents.forEach(event => {
-            const uniqueKey = `${event.task}-${event.time}`;
+            // 1. Remove spaces and make lowercase (e.g. "Run " -> "run")
+            const cleanName = event.task.trim().toLowerCase();
+            
+            // 2. Convert Time to exact number to ignore timezone format differences
+            const timeNum = new Date(event.time).getTime();
+
+            // 3. Create a unique fingerprint
+            const uniqueKey = `${cleanName}-${timeNum}`;
+            
             if (!seen.has(uniqueKey)) {
                 seen.add(uniqueKey);
                 uniqueEvents.push(event);
@@ -123,10 +128,8 @@ app.post('/api/sync-calendar', async (req, res) => {
     }
 });
 
-// ADD QUEST
 app.post('/api/add-quest', async (req, res) => {
     const { token, task, type, deadline, days } = req.body;
-    
     oauth2Client.setCredentials({ access_token: token });
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
@@ -145,11 +148,8 @@ app.post('/api/add-quest', async (req, res) => {
     };
 
     if (type === 'routine') {
-        if (days && days > 0) {
-            event.recurrence = [`RRULE:FREQ=DAILY;COUNT=${days}`];
-        } else {
-            event.recurrence = ['RRULE:FREQ=DAILY'];
-        }
+        if (days && days > 0) event.recurrence = [`RRULE:FREQ=DAILY;COUNT=${days}`];
+        else event.recurrence = ['RRULE:FREQ=DAILY'];
     }
 
     try {
@@ -158,42 +158,29 @@ app.post('/api/add-quest', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, error: error.message }); }
 });
 
-// COMPLETE QUEST
 app.post('/api/complete-quest', async (req, res) => {
     const { token, eventId, task } = req.body;
     oauth2Client.setCredentials({ access_token: token });
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-
     try {
-        await calendar.events.patch({
-            calendarId: 'primary',
-            eventId: eventId,
-            requestBody: { summary: `✅ ${task}` }
-        });
+        await calendar.events.patch({ calendarId: 'primary', eventId: eventId, requestBody: { summary: `✅ ${task}` } });
         res.json({ success: true });
     } catch (error) { res.status(500).json({ success: false }); }
 });
 
-// DELETE QUEST
 app.post('/api/delete-quest', async (req, res) => {
     const { token, eventId, type } = req.body;
-    if (!token || !eventId) return res.status(400).json({ error: "Missing Data" });
-
     oauth2Client.setCredentials({ access_token: token });
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-
     try {
         let targetId = eventId;
-        if (type === 'routine' && eventId.includes('_')) {
-             targetId = eventId.split('_')[0];
-        }
+        if (type === 'routine' && eventId.includes('_')) targetId = eventId.split('_')[0];
         await calendar.events.delete({ calendarId: 'primary', eventId: targetId });
         res.json({ success: true });
     } catch (error) { res.status(500).json({ success: false }); }
 });
 
-// SEND EMAIL
-app.post('/api/send-reminder', async (req, res) => { /* Email unchanged */ res.json({success:true}); });
+app.post('/api/send-reminder', async (req, res) => { res.json({success:true}); });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
