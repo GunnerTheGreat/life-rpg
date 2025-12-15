@@ -60,7 +60,7 @@ app.post('/api/user/update', async (req, res) => {
     } catch (e) { res.status(500).json({ error: "Save Error" }); }
 });
 
-// SYNC CALENDAR
+// SYNC CALENDAR (Updated with DUPLICATE REMOVER)
 app.post('/api/sync-calendar', async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: "No Token" });
@@ -68,7 +68,6 @@ app.post('/api/sync-calendar', async (req, res) => {
     oauth2Client.setCredentials({ access_token: token });
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     
-    // Timezone Logic (Look back 24h)
     const startOfSearch = new Date(); 
     startOfSearch.setDate(startOfSearch.getDate() - 1); 
     startOfSearch.setHours(0, 0, 0, 0);
@@ -85,13 +84,12 @@ app.post('/api/sync-calendar', async (req, res) => {
             orderBy: 'startTime',
         });
         
-        const activeEvents = response.data.items
+        const rawEvents = response.data.items
             .filter(event => {
                 if (!event.summary) return false;
                 const eventDate = new Date(event.start.dateTime || event.start.date);
                 const type = event.description || 'side';
 
-                // Routine Filter: Only show if it belongs to Today
                 if (type === 'routine') {
                     return eventDate < endOfToday && eventDate > startOfSearch;
                 }
@@ -105,16 +103,29 @@ app.post('/api/sync-calendar', async (req, res) => {
                 completed: event.summary.startsWith('✅')
             }));
 
-        res.json({ success: true, events: activeEvents });
+        // 🛡️ DEDUPLICATION LOGIC
+        // We look at the "Task Name" + "Time". If we've seen it before, we skip it.
+        const uniqueEvents = [];
+        const seen = new Set();
+
+        rawEvents.forEach(event => {
+            const uniqueKey = `${event.task}-${event.time}`;
+            if (!seen.has(uniqueKey)) {
+                seen.add(uniqueKey);
+                uniqueEvents.push(event);
+            }
+        });
+
+        res.json({ success: true, events: uniqueEvents });
     } catch (error) {
         console.error("Sync Error:", error.message);
         res.status(500).json({ success: false });
     }
 });
 
-// ADD QUEST (Updated with Days Option)
+// ADD QUEST
 app.post('/api/add-quest', async (req, res) => {
-    const { token, task, type, deadline, days } = req.body; // We receive 'days' now
+    const { token, task, type, deadline, days } = req.body;
     
     oauth2Client.setCredentials({ access_token: token });
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
@@ -134,7 +145,6 @@ app.post('/api/add-quest', async (req, res) => {
     };
 
     if (type === 'routine') {
-        // If 'days' is provided, we stop after X days. If not, it runs forever.
         if (days && days > 0) {
             event.recurrence = [`RRULE:FREQ=DAILY;COUNT=${days}`];
         } else {
