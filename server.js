@@ -78,9 +78,9 @@ app.post('/api/sync-calendar', async (req, res) => {
     oauth2Client.setCredentials({ access_token: token });
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     
-    // Look back 24h to catch ongoing tasks, but filter strictly later
+    // Look back 48 hours to be absolutely safe with timezones
     const startOfSearch = new Date(); 
-    startOfSearch.setDate(startOfSearch.getDate() - 1); 
+    startOfSearch.setDate(startOfSearch.getDate() - 2); 
     startOfSearch.setHours(0, 0, 0, 0);
     
     const endOfToday = new Date();
@@ -90,7 +90,7 @@ app.post('/api/sync-calendar', async (req, res) => {
         const response = await calendar.events.list({
             calendarId: 'primary',
             timeMin: startOfSearch.toISOString(),
-            maxResults: 150, // Increased to catch duplicates
+            maxResults: 200, 
             singleEvents: true,
             orderBy: 'startTime',
         });
@@ -100,6 +100,7 @@ app.post('/api/sync-calendar', async (req, res) => {
                 if (!event.summary) return false;
                 const eventDate = new Date(event.start.dateTime || event.start.date);
                 const type = event.description || 'side';
+                // Only show routines for Today or Yesterday (to catch overdue)
                 if (type === 'routine') return eventDate < endOfToday && eventDate > startOfSearch;
                 return true; 
             })
@@ -111,15 +112,19 @@ app.post('/api/sync-calendar', async (req, res) => {
                 completed: event.summary.startsWith('✅')
             }));
 
-        // 🛡️ FIXED DEDUPLICATION (Now includes DATE)
+        // 🛡️ TIMEZONE-AWARE DEDUPLICATION
         const uniqueEvents = [];
         const seen = new Set();
+        
         rawEvents.forEach(event => {
             const name = event.task.trim().toLowerCase();
-            const dateObj = new Date(event.time);
             
-            // KEY FIX: We include the DATE (getDate) so Dec 15 and Dec 16 are DIFFERENT
-            const timeKey = `${dateObj.getDate()}_${dateObj.getHours()}:${dateObj.getMinutes()}`;
+            // 1. Convert UTC time to Manila Time (+8 Hours) for correct "Day" calculation
+            const utcTime = new Date(event.time).getTime();
+            const manilaTime = new Date(utcTime + (8 * 60 * 60 * 1000));
+            
+            // 2. Create Key using Manila Date (e.g., "16_6:30")
+            const timeKey = `${manilaTime.getDate()}_${manilaTime.getHours()}:${manilaTime.getMinutes()}`;
             const uniqueKey = `${name}-${timeKey}`;
             
             if (!seen.has(uniqueKey)) {
