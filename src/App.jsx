@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Zap, Bell, Plus, Star, Repeat, LayoutDashboard, PenTool, CheckCircle, Calendar, Clock, ChevronRight, LogOut } from 'lucide-react';
+import { Shield, Zap, Bell, Plus, Star, Repeat, LayoutDashboard, PenTool, CheckCircle, Calendar, Clock, ChevronRight, LogOut, Trash2 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 
@@ -19,17 +19,17 @@ const LifeRPG = () => {
   const [questType, setQuestType] = useState("side"); 
   const [deadline, setDeadline] = useState(""); 
   const [timeFrame, setTimeFrame] = useState("09:00"); 
+  const [routineDays, setRoutineDays] = useState(""); // NEW STATE FOR DAYS
 
-  // --- PROGRESS BAR MATH (Calculates based on ALL quests) ---
   const completedCount = quests.filter(q => q.completed).length;
   const progressPercent = quests.length > 0 ? (completedCount / quests.length) * 100 : 0;
 
-  // --- VISUAL FILTERS (Hides completed quests from the list) ---
+  // VISUAL FILTERS
   const routineQuests = quests.filter(q => q.type === 'routine' && !q.completed);
   const mainQuests = quests.filter(q => q.type === 'main' && !q.completed);
   const sideQuests = quests.filter(q => q.type === 'side' && !q.completed);
 
-  const generateTimeOptions = () => { /* ... same as before ... */
+  const generateTimeOptions = () => {
     const times = [];
     for (let i = 0; i < 24; i++) {
         for (let j = 0; j < 60; j += 30) {
@@ -109,18 +109,18 @@ const LifeRPG = () => {
         finalDeadline = date.toISOString();
     } 
     try {
+      // Pass the 'days' variable to the server
       await axios.post(`${API_URL}/api/add-quest`, {
-        token: authToken, task: newTask, type: questType, deadline: finalDeadline
+        token: authToken, task: newTask, type: questType, deadline: finalDeadline, days: routineDays
       });
       setTimeout(() => fetchCalendar(authToken), 1000);
       setNewTask("");
+      setRoutineDays(""); // Reset
       setActiveTab("dashboard"); 
     } catch (err) { alert("Failed to save quest"); }
   };
 
-  // --- UPDATED COMPLETE FUNCTION ---
   const completeQuest = async (id, taskName, type) => {
-    // 1. Mark as completed in MEMORY (Don't delete it!)
     setQuests(quests.map(q => q.id === id ? { ...q, completed: true } : q));
     
     let xpGain = type === 'main' ? 200 : type === 'routine' ? 30 : 50;
@@ -148,7 +148,26 @@ const LifeRPG = () => {
     }
   };
 
-  const sendReminder = async (quest) => { /* Same as before */ };
+  const deleteQuest = async (id, type) => {
+      setQuests(quests.filter(q => q.id !== id));
+      addLog(`Deleted ${type} quest.`, 'loss');
+      if (authToken) {
+          try {
+              await axios.post(`${API_URL}/api/delete-quest`, {
+                  token: authToken, eventId: id, type: type
+              });
+          } catch (err) { console.error("Failed to delete", err); }
+      }
+  };
+
+  const sendReminder = async (quest) => {
+    const userEmail = "gunned25845@gmail.com"; 
+    try {
+        await axios.post(`${API_URL}/api/send-reminder`, { email: userEmail, task: quest.task });
+        alert("Email sent!");
+    } catch (e) { alert("Email failed"); }
+  };
+
   const addLog = (text, type) => { setLogs(prev => [{ id: Date.now(), text, type, time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }, ...prev]); };
 
   const QuestItem = ({ q }) => (
@@ -168,6 +187,8 @@ const LifeRPG = () => {
             </div>
         </div>
         <div className="flex gap-2">
+            <button onClick={() => sendReminder(q)} className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg"><Bell size={18} /></button>
+            <button onClick={() => deleteQuest(q.id, q.type)} className="p-2 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={18} /></button>
             <button onClick={() => completeQuest(q.id, q.task, q.type)} className="px-3 py-1.5 bg-green-100 text-green-700 font-bold text-sm rounded-lg hover:bg-green-200 flex items-center gap-1"><CheckCircle size={14}/> Done</button>
         </div>
     </div>
@@ -210,33 +231,28 @@ const LifeRPG = () => {
                         <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden"><div className="bg-green-500 h-4 rounded-full transition-all duration-700 ease-out" style={{ width: `${progressPercent}%` }}></div></div>
                     </div>
 
-                    {/* ROUTINE QUESTS (Only Uncompleted) */}
                     {routineQuests.length > 0 && (
                         <div className="mb-8">
                             <h3 className="font-bold text-gray-500 uppercase tracking-wider text-sm mb-3 flex items-center gap-2"><Repeat size={16}/> Daily Routines (Today)</h3>
                             {routineQuests.map(q => <QuestItem key={q.id} q={q} />)}
                         </div>
                     )}
-                    {/* MAIN QUESTS */}
                     {mainQuests.length > 0 && (
                         <div className="mb-8">
                             <h3 className="font-bold text-gray-500 uppercase tracking-wider text-sm mb-3 flex items-center gap-2"><Star size={16}/> Main Quests</h3>
                             {mainQuests.map(q => <QuestItem key={q.id} q={q} />)}
                         </div>
                     )}
-                    {/* SIDE QUESTS */}
                     {sideQuests.length > 0 && (
                         <div className="mb-8">
                             <h3 className="font-bold text-gray-500 uppercase tracking-wider text-sm mb-3 flex items-center gap-2"><ChevronRight size={16}/> Side Quests</h3>
                             {sideQuests.map(q => <QuestItem key={q.id} q={q} />)}
                         </div>
                     )}
-                    
                     {quests.length === 0 && <div className="text-center py-10 text-gray-400">No active quests. Sync Google or Add one!</div>}
                 </div>
             )}
 
-            {/* QUEST HUB */}
             {activeTab === 'add' && (
                 <div className="max-w-2xl mx-auto">
                     <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200">
@@ -255,6 +271,10 @@ const LifeRPG = () => {
                                                 </select>
                                                 <Clock className="absolute right-4 top-4 text-blue-400" size={20}/>
                                             </div>
+                                            
+                                            {/* NEW DURATION INPUT */}
+                                            <label className="block text-sm font-bold text-gray-700 mt-4 mb-2">Duration (Days)</label>
+                                            <input type="number" value={routineDays} onChange={(e) => setRoutineDays(e.target.value)} placeholder="e.g. 30 (Leave empty for Forever)" className="w-full p-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-500"/>
                                         </>
                                     ) : (
                                         <>
