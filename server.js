@@ -58,7 +58,7 @@ app.post('/api/user/update', async (req, res) => {
     } catch (e) { res.status(500).json({ error: "Save Error" }); }
 });
 
-// SYNC CALENDAR (SUPER AGGRESSIVE DEDUPE)
+// SYNC CALENDAR (FIXED: Deduplication by Minute)
 app.post('/api/sync-calendar', async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: "No Token" });
@@ -66,6 +66,7 @@ app.post('/api/sync-calendar', async (req, res) => {
     oauth2Client.setCredentials({ access_token: token });
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     
+    // Look back 24h
     const startOfSearch = new Date(); 
     startOfSearch.setDate(startOfSearch.getDate() - 1); 
     startOfSearch.setHours(0, 0, 0, 0);
@@ -101,20 +102,20 @@ app.post('/api/sync-calendar', async (req, res) => {
                 completed: event.summary.startsWith('✅')
             }));
 
-        // 🛡️ SUPER DEDUPLICATION LOGIC
+        // 🛡️ DEDUPLICATION FIX
+        // We now filter by NAME + HOUR + MINUTE.
+        // This ignores seconds/milliseconds differences (which cause duplicates).
         const uniqueEvents = [];
         const seen = new Set();
 
         rawEvents.forEach(event => {
-            // 1. Remove spaces and make lowercase (e.g. "Run " -> "run")
-            const cleanName = event.task.trim().toLowerCase();
+            const name = event.task.trim().toLowerCase();
+            const dateObj = new Date(event.time);
             
-            // 2. Convert Time to exact number to ignore timezone format differences
-            const timeNum = new Date(event.time).getTime();
+            // Create a "Time Slot" key (e.g. "morning jog-6:30")
+            const timeKey = `${dateObj.getHours()}:${dateObj.getMinutes()}`;
+            const uniqueKey = `${name}-${timeKey}`;
 
-            // 3. Create a unique fingerprint
-            const uniqueKey = `${cleanName}-${timeNum}`;
-            
             if (!seen.has(uniqueKey)) {
                 seen.add(uniqueKey);
                 uniqueEvents.push(event);
