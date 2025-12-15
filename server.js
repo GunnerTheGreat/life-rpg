@@ -20,10 +20,9 @@ if (process.env.MONGO_URI) {
     console.log("⚠️ MONGO_URI missing in .env file");
 }
 
-// 🆕 UPDATED USER MODEL (Now stores Email & IGN)
 const userSchema = new mongoose.Schema({
-    email: { type: String, required: true, unique: true }, // The Google Email
-    ign: { type: String, default: "Adventurer" },          // In-Game Name
+    email: { type: String, required: true, unique: true },
+    ign: { type: String, default: "Adventurer" },
     stats: {
         level: { type: Number, default: 1 },
         coins: { type: Number, default: 0 },
@@ -44,34 +43,26 @@ const oauth2Client = new google.auth.OAuth2(
 
 // --- 3. API ROUTES ---
 
-// 🆕 LOGIN / CHECK USER
-// Returns the user if found, or "null" if they are new.
 app.post('/api/user/login', async (req, res) => {
     const { email } = req.body;
     try {
         const user = await User.findOne({ email });
-        if (user) {
-            res.json({ exists: true, user });
-        } else {
-            res.json({ exists: false }); // Tells Frontend to ask for IGN
-        }
+        if (user) res.json({ exists: true, user });
+        else res.json({ exists: false });
     } catch (e) { res.status(500).json({ error: "DB Error" }); }
 });
 
-// 🆕 SIGNUP (CREATE CHARACTER)
 app.post('/api/user/signup', async (req, res) => {
     const { email, ign } = req.body;
     try {
         const newUser = await User.create({ 
-            email, 
-            ign,
+            email, ign,
             stats: { level: 1, coins: 0, hp: 1000, maxHp: 1000, exp: 0, maxExp: 1000 }
         });
         res.json({ success: true, user: newUser });
     } catch (e) { res.status(500).json({ error: "Creation Error" }); }
 });
 
-// SAVE STATS (Now looks up by EMAIL)
 app.post('/api/user/update', async (req, res) => {
     try {
         const { email, stats } = req.body;
@@ -80,7 +71,6 @@ app.post('/api/user/update', async (req, res) => {
     } catch (e) { res.status(500).json({ error: "Save Error" }); }
 });
 
-// SYNC CALENDAR (DEDUPLICATED)
 app.post('/api/sync-calendar', async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: "No Token" });
@@ -140,7 +130,6 @@ app.post('/api/sync-calendar', async (req, res) => {
     }
 });
 
-// ADD QUEST (With Days)
 app.post('/api/add-quest', async (req, res) => {
     const { token, task, type, deadline, days } = req.body;
     oauth2Client.setCredentials({ access_token: token });
@@ -171,7 +160,7 @@ app.post('/api/add-quest', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, error: error.message }); }
 });
 
-// COMPLETE QUEST
+// ✅ COMPLETE QUEST (Adds Checkmark)
 app.post('/api/complete-quest', async (req, res) => {
     const { token, eventId, task } = req.body;
     oauth2Client.setCredentials({ access_token: token });
@@ -182,7 +171,18 @@ app.post('/api/complete-quest', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false }); }
 });
 
-// DELETE QUEST
+// ↩️ UN-COMPLETE QUEST (Removes Checkmark - NEW!)
+app.post('/api/uncomplete-quest', async (req, res) => {
+    const { token, eventId, task } = req.body;
+    oauth2Client.setCredentials({ access_token: token });
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+    try {
+        // We set the summary back to just the task name (removing ✅)
+        await calendar.events.patch({ calendarId: 'primary', eventId: eventId, requestBody: { summary: task } });
+        res.json({ success: true });
+    } catch (error) { res.status(500).json({ success: false }); }
+});
+
 app.post('/api/delete-quest', async (req, res) => {
     const { token, eventId, type } = req.body;
     oauth2Client.setCredentials({ access_token: token });

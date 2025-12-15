@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Zap, Bell, Plus, Star, Repeat, LayoutDashboard, PenTool, CheckCircle, Calendar, Clock, ChevronRight, LogOut, Trash2, User } from 'lucide-react';
+import { Shield, Zap, Bell, Plus, Star, Repeat, LayoutDashboard, PenTool, CheckCircle, Calendar, Clock, ChevronRight, LogOut, Trash2, User, RotateCcw } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 
-// 🌎 AUTOMATIC URL SWITCHER
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 const LifeRPG = () => {
-  // --- STATE ---
+  // STATE
   const [activeTab, setActiveTab] = useState("dashboard");
   const [stats, setStats] = useState({ level: 1, coins: 0, hp: 1000, maxHp: 1000, exp: 0, maxExp: 1000 });
   const [quests, setQuests] = useState([]);
@@ -20,22 +19,21 @@ const LifeRPG = () => {
   const [showIgnModal, setShowIgnModal] = useState(false);
   const [newIgnInput, setNewIgnInput] = useState("");
 
-  // FORM INPUTS
+  // INPUTS
   const [newTask, setNewTask] = useState(""); 
   const [questType, setQuestType] = useState("side"); 
   const [deadline, setDeadline] = useState(""); 
   const [timeFrame, setTimeFrame] = useState("09:00"); 
   const [routineDays, setRoutineDays] = useState("");
 
-  // 🛡️ FRONTEND DEDUPLICATION
+  // DEDUPE
   const cleanedQuests = quests.filter((q, index, self) =>
     index === self.findIndex((t) => (
       t.task === q.task && new Date(t.time).getTime() === new Date(q.time).getTime()
     ))
   );
 
-  // --- SPLIT PROGRESS MATH ---
-  // Helper to calculate % for a specific type
+  // PROGRESS
   const getProgress = (type) => {
       const typeQuests = cleanedQuests.filter(q => q.type === type);
       const total = typeQuests.length;
@@ -43,15 +41,14 @@ const LifeRPG = () => {
       const completed = typeQuests.filter(q => q.completed).length;
       return (completed / total) * 100;
   };
-
   const routineProgress = getProgress('routine');
   const mainProgress = getProgress('main');
   const sideProgress = getProgress('side');
 
-  // VISUAL LISTS (Only Uncompleted for display)
-  const routineQuests = cleanedQuests.filter(q => q.type === 'routine' && !q.completed);
-  const mainQuests = cleanedQuests.filter(q => q.type === 'main' && !q.completed);
-  const sideQuests = cleanedQuests.filter(q => q.type === 'side' && !q.completed);
+  // LISTS - 🆕 SHOW ALL QUESTS (Even Completed Ones) so we can Undo them
+  const routineQuests = cleanedQuests.filter(q => q.type === 'routine');
+  const mainQuests = cleanedQuests.filter(q => q.type === 'main');
+  const sideQuests = cleanedQuests.filter(q => q.type === 'side');
 
   const generateTimeOptions = () => {
     const times = [];
@@ -68,12 +65,11 @@ const LifeRPG = () => {
   };
   const timeOptions = generateTimeOptions();
 
-  // --- INITIAL LOAD ---
+  // INIT
   useEffect(() => {
     const restoreSession = async () => {
         const savedToken = localStorage.getItem('googleAuthToken');
         const savedEmail = localStorage.getItem('userEmail');
-        
         if (savedToken && savedEmail) {
             setAuthToken(savedToken);
             setUserEmail(savedEmail);
@@ -84,9 +80,7 @@ const LifeRPG = () => {
                     setIgn(res.data.user.ign);
                     addLog(`Welcome back, ${res.data.user.ign}!`, "gain");
                     fetchCalendar(savedToken);
-                } else {
-                    logout();
-                }
+                } else logout();
             } catch (err) { console.error("Restore failed"); }
         }
     };
@@ -104,9 +98,7 @@ const LifeRPG = () => {
     onSuccess: async (res) => {
       const token = res.access_token;
       try {
-          const googleUser = await axios.get('https://www.googleapis.com/oauth2/v1/userinfo', {
-              headers: { Authorization: `Bearer ${token}` }
-          });
+          const googleUser = await axios.get('https://www.googleapis.com/oauth2/v1/userinfo', { headers: { Authorization: `Bearer ${token}` } });
           const email = googleUser.data.email;
           localStorage.setItem('googleAuthToken', token);
           localStorage.setItem('userEmail', email);
@@ -119,9 +111,7 @@ const LifeRPG = () => {
               setIgn(dbCheck.data.user.ign);
               fetchCalendar(token);
               addLog(`Welcome back, ${dbCheck.data.user.ign}!`, "gain");
-          } else {
-              setShowIgnModal(true);
-          }
+          } else setShowIgnModal(true);
       } catch (err) { console.error("Login Error", err); }
     },
     scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email'
@@ -159,9 +149,7 @@ const LifeRPG = () => {
         setQuests(res.data.events); 
         if(!authToken) addLog("Synced with Google!", "gain");
       }
-    } catch (err) { 
-        if (err.response && err.response.status === 500) logout();
-    }
+    } catch (err) { if (err.response && err.response.status === 500) logout(); }
   };
 
   const addQuest = async () => {
@@ -174,9 +162,7 @@ const LifeRPG = () => {
         finalDeadline = date.toISOString();
     } 
     try {
-      await axios.post(`${API_URL}/api/add-quest`, {
-        token: authToken, task: newTask, type: questType, deadline: finalDeadline, days: routineDays
-      });
+      await axios.post(`${API_URL}/api/add-quest`, { token: authToken, task: newTask, type: questType, deadline: finalDeadline, days: routineDays });
       setTimeout(() => fetchCalendar(authToken), 1000);
       setNewTask("");
       setRoutineDays("");
@@ -184,39 +170,62 @@ const LifeRPG = () => {
     } catch (err) { alert("Failed to save quest"); }
   };
 
-  const completeQuest = async (id, taskName, type) => {
-    setQuests(prev => prev.map(q => q.id === id ? { ...q, completed: true } : q));
-    let xpGain = type === 'main' ? 200 : type === 'routine' ? 30 : 50;
-    let coinGain = type === 'main' ? 100 : 20;
-    const newStats = { ...stats, exp: stats.exp + xpGain, coins: stats.coins + coinGain };
-    if (newStats.exp >= newStats.maxExp) {
-        newStats.level += 1;
-        newStats.exp = newStats.exp - newStats.maxExp;
-        newStats.maxExp = Math.round(newStats.maxExp * 1.2); 
-        newStats.hp = newStats.maxHp; 
-        addLog(`LEVEL UP! You are now Level ${newStats.level}`, "gain");
-    }
-    saveStats(newStats); 
-    addLog(`Completed ${type} quest! +${xpGain} XP`, 'gain');
-    if (authToken) {
-        try { await axios.post(`${API_URL}/api/complete-quest`, { token: authToken, eventId: id, task: taskName }); } catch (err) {}
-    }
+  // 🆕 TOGGLE QUEST (Complete or Un-complete)
+  const toggleQuest = async (q) => {
+      // 1. Determine Action: If currently done, we Undo. If not, we Complete.
+      const isUndoing = q.completed;
+      
+      // 2. Optimistic UI Update
+      setQuests(prev => prev.map(item => item.id === q.id ? { ...item, completed: !isUndoing } : item));
+
+      // 3. Stats Math
+      let xpGain = q.type === 'main' ? 200 : q.type === 'routine' ? 30 : 50;
+      let coinGain = q.type === 'main' ? 100 : 20;
+
+      // If undoing, we SUBTRACT stats. If completing, we ADD.
+      const multiplier = isUndoing ? -1 : 1;
+      
+      const newStats = { 
+          ...stats, 
+          exp: Math.max(0, stats.exp + (xpGain * multiplier)), 
+          coins: Math.max(0, stats.coins + (coinGain * multiplier)) 
+      };
+
+      // Level Logic (Only on gain)
+      if (!isUndoing && newStats.exp >= newStats.maxExp) {
+          newStats.level += 1;
+          newStats.exp -= newStats.maxExp;
+          newStats.maxExp = Math.round(newStats.maxExp * 1.2); 
+          newStats.hp = newStats.maxHp; 
+          addLog(`LEVEL UP! You are now Level ${newStats.level}`, "gain");
+      }
+
+      saveStats(newStats); 
+      addLog(`${isUndoing ? 'Undid' : 'Completed'} ${q.type} quest! ${isUndoing ? '-' : '+'}${xpGain} XP`, isUndoing ? 'loss' : 'gain');
+
+      // 4. Server Call
+      if (authToken) {
+          try {
+              if (isUndoing) {
+                  await axios.post(`${API_URL}/api/uncomplete-quest`, { token: authToken, eventId: q.id, task: q.task });
+              } else {
+                  await axios.post(`${API_URL}/api/complete-quest`, { token: authToken, eventId: q.id, task: q.task });
+              }
+          } catch (err) {}
+      }
   };
 
   const deleteQuest = async (id, type) => {
       setQuests(prev => prev.filter(q => q.id !== id));
       addLog(`Deleted ${type} quest.`, 'loss');
       if (authToken) {
-          try { await axios.post(`${API_URL}/api/delete-quest`, { token: authToken, eventId: id, type: type }); } catch (err) { console.error("Failed to delete", err); }
+          try { await axios.post(`${API_URL}/api/delete-quest`, { token: authToken, eventId: id, type: type }); } catch (err) {}
       }
   };
 
   const sendReminder = async (quest) => {
     const userEmail = "gunned25845@gmail.com"; 
-    try {
-        await axios.post(`${API_URL}/api/send-reminder`, { email: userEmail, task: quest.task });
-        alert("Email sent!");
-    } catch (e) { alert("Email failed"); }
+    try { await axios.post(`${API_URL}/api/send-reminder`, { email: userEmail, task: quest.task }); alert("Email sent!"); } catch (e) { alert("Email failed"); }
   };
 
   const addLog = (text, type) => { setLogs(prev => [{ id: Date.now(), text, type, time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) }, ...prev]); };
@@ -224,16 +233,15 @@ const LifeRPG = () => {
   const QuestItem = ({ q }) => (
     <div className={`flex items-center justify-between p-4 rounded-xl shadow-sm bg-white mb-3 border-l-4 transition-all hover:translate-x-1 ${
         q.type === 'main' ? 'border-yellow-500' : q.type === 'routine' ? 'border-blue-400' : 'border-gray-300'
-    }`}>
+    } ${q.completed ? 'opacity-60 bg-gray-50' : ''}`}>
         <div className="flex items-center gap-3">
             {q.type === 'main' && <Star className="text-yellow-500 fill-yellow-500" size={20}/>}
             {q.type === 'routine' && <Repeat className="text-blue-500" size={20}/>}
             {q.type === 'side' && <div className="w-5 h-5 rounded-full border-2 border-gray-300"></div>}
             
             <div>
-                <p className="font-bold text-gray-800">{q.task}</p>
+                <p className={`font-bold text-gray-800 ${q.completed ? 'line-through text-gray-400' : ''}`}>{q.task}</p>
                 <p className="text-xs text-gray-400 font-bold tracking-wide uppercase mt-0.5 flex items-center gap-1">
-                   {/* 🆕 DATE DISPLAY ADDED HERE */}
                    <Clock size={10}/> 
                    {new Date(q.time).toLocaleDateString([], {weekday: 'short', month: 'short', day: 'numeric'})} • {new Date(q.time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
                 </p>
@@ -242,14 +250,24 @@ const LifeRPG = () => {
         <div className="flex gap-2">
             <button onClick={() => sendReminder(q)} className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg"><Bell size={18} /></button>
             <button onClick={() => deleteQuest(q.id, q.type)} className="p-2 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={18} /></button>
-            <button onClick={() => completeQuest(q.id, q.task, q.type)} className="px-3 py-1.5 bg-green-100 text-green-700 font-bold text-sm rounded-lg hover:bg-green-200 flex items-center gap-1"><CheckCircle size={14}/> Done</button>
+            
+            {/* 🆕 TOGGLE BUTTON */}
+            <button 
+                onClick={() => toggleQuest(q)} 
+                className={`px-3 py-1.5 font-bold text-sm rounded-lg flex items-center gap-1 transition-all ${
+                    q.completed 
+                    ? 'bg-gray-200 text-gray-500 hover:bg-gray-300' 
+                    : 'bg-green-100 text-green-700 hover:bg-green-200'
+                }`}
+            >
+                {q.completed ? <><RotateCcw size={14}/> Undo</> : <><CheckCircle size={14}/> Done</>}
+            </button>
         </div>
     </div>
   );
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans flex flex-col md:flex-row relative">
-      
       {showIgnModal && (
           <div className="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl text-center">
@@ -262,7 +280,6 @@ const LifeRPG = () => {
           </div>
       )}
 
-      {/* SIDEBAR */}
       <div className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col justify-between hidden md:flex">
         <div>
             <div className="p-6 flex items-center gap-3 font-bold text-xl border-b border-gray-100"><Shield className="text-blue-600"/> LifeRPG</div>
@@ -289,28 +306,22 @@ const LifeRPG = () => {
         <div className="flex-1 overflow-y-auto p-6">
             {activeTab === 'dashboard' && (
                 <div className="max-w-4xl mx-auto">
-                    
-                    {/* 🆕 NEW SPLIT PROGRESS BARS */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                        {/* 1. ROUTINE BAR */}
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-blue-100">
                             <div className="flex justify-between text-sm font-bold text-blue-600 mb-2"><span>Routines</span><span>{Math.round(routineProgress)}%</span></div>
                             <div className="w-full bg-blue-50 rounded-full h-2 overflow-hidden"><div className="bg-blue-500 h-2 rounded-full transition-all duration-700" style={{ width: `${routineProgress}%` }}></div></div>
                         </div>
-
-                        {/* 2. MAIN QUEST BAR */}
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-yellow-100">
                             <div className="flex justify-between text-sm font-bold text-yellow-600 mb-2"><span>Main Quests</span><span>{Math.round(mainProgress)}%</span></div>
                             <div className="w-full bg-yellow-50 rounded-full h-2 overflow-hidden"><div className="bg-yellow-500 h-2 rounded-full transition-all duration-700" style={{ width: `${mainProgress}%` }}></div></div>
                         </div>
-
-                        {/* 3. SIDE QUEST BAR */}
                         <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
                             <div className="flex justify-between text-sm font-bold text-gray-600 mb-2"><span>Side Quests</span><span>{Math.round(sideProgress)}%</span></div>
                             <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden"><div className="bg-gray-400 h-2 rounded-full transition-all duration-700" style={{ width: `${sideProgress}%` }}></div></div>
                         </div>
                     </div>
 
+                    {/* SHOW ALL QUESTS (Both completed and uncompleted so we can UNDO) */}
                     {routineQuests.length > 0 && (
                         <div className="mb-8">
                             <h3 className="font-bold text-gray-500 uppercase tracking-wider text-sm mb-3 flex items-center gap-2"><Repeat size={16}/> Daily Routines</h3>
@@ -369,7 +380,6 @@ const LifeRPG = () => {
             )}
         </div>
       </div>
-      
       <div className="w-64 bg-white border-l border-gray-200 hidden xl:block p-4 overflow-y-auto">
         <h3 className="font-bold mb-4 flex items-center gap-2 text-sm text-gray-500 uppercase tracking-wider"><Zap size={16}/> Activity Log</h3>
         <div className="space-y-4">{logs.map(log => (<div key={log.id} className="text-sm border-b border-gray-100 pb-3"><span className="font-bold text-gray-800 block">{log.text}</span><span className="text-xs text-gray-400">{log.time}</span></div>))}</div>
