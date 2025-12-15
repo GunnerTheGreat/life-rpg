@@ -3,6 +3,10 @@ import { Shield, Zap, Bell, Plus, Star, Repeat, LayoutDashboard, PenTool, CheckC
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 
+// 🌎 AUTOMATIC URL SWITCHER
+// If on Vercel, it uses the Cloud Link. If on Laptop, it uses Localhost.
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
 const LifeRPG = () => {
   // --- STATE ---
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -46,9 +50,12 @@ const LifeRPG = () => {
     const loadGame = async () => {
         // A. Load Stats from DB
         try {
-            const res = await axios.get('http://localhost:3000/api/user');
+            // 👇 NOTICE: We use API_URL here now
+            const res = await axios.get(`${API_URL}/api/user`);
             if (res.data) setStats(res.data);
-        } catch (err) {}
+        } catch (err) {
+            console.error("Failed to connect to server at", API_URL);
+        }
 
         // B. Check for Saved Google Token (Auto-Sync)
         const savedToken = localStorage.getItem('googleAuthToken');
@@ -63,13 +70,15 @@ const LifeRPG = () => {
 
   const saveStats = async (newStats) => {
     setStats(newStats); 
-    try { await axios.post('http://localhost:3000/api/user/update', { stats: newStats }); } catch (err) {}
+    try { 
+        // 👇 UPDATED URL
+        await axios.post(`${API_URL}/api/user/update`, { stats: newStats }); 
+    } catch (err) {}
   };
 
   // --- GOOGLE LOGIN ---
   const login = useGoogleLogin({
     onSuccess: async (res) => {
-      // Save Token to LocalStorage
       localStorage.setItem('googleAuthToken', res.access_token);
       setAuthToken(res.access_token);
       fetchCalendar(res.access_token);
@@ -87,14 +96,14 @@ const LifeRPG = () => {
 
   const fetchCalendar = async (token) => {
     try {
-      const res = await axios.post('http://localhost:3000/api/sync-calendar', { token });
+      // 👇 UPDATED URL
+      const res = await axios.post(`${API_URL}/api/sync-calendar`, { token });
       if(res.data.success) {
         setQuests(res.data.events); 
         if(!authToken) addLog("Auto-Sync Complete!", "gain");
       }
     } catch (err) { 
         console.error(err);
-        // If token is expired (401 error), force logout
         if (err.response && err.response.status === 500) {
             addLog("Session Expired. Please Sync again.", "loss");
             localStorage.removeItem('googleAuthToken');
@@ -121,7 +130,8 @@ const LifeRPG = () => {
     addLog(`Creating ${questType} quest...`, "gain");
 
     try {
-      await axios.post('http://localhost:3000/api/add-quest', {
+      // 👇 UPDATED URL
+      await axios.post(`${API_URL}/api/add-quest`, {
         token: authToken, task: newTask, type: questType, deadline: finalDeadline
       });
       setTimeout(() => fetchCalendar(authToken), 1000);
@@ -155,7 +165,8 @@ const LifeRPG = () => {
 
     if (authToken) {
         try {
-            await axios.post('http://localhost:3000/api/complete-quest', {
+            // 👇 UPDATED URL
+            await axios.post(`${API_URL}/api/complete-quest`, {
                 token: authToken, eventId: id, task: taskName
             });
         } catch (err) { console.error("Failed to update Google Calendar", err); }
@@ -165,7 +176,8 @@ const LifeRPG = () => {
   const sendReminder = async (quest) => {
     const userEmail = "gunned25845@gmail.com"; 
     try {
-        await axios.post('http://localhost:3000/api/send-reminder', { email: userEmail, task: quest.task });
+        // 👇 UPDATED URL
+        await axios.post(`${API_URL}/api/send-reminder`, { email: userEmail, task: quest.task });
         alert("Email sent!");
     } catch (e) { alert("Email failed"); }
   };
@@ -199,6 +211,7 @@ const LifeRPG = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans flex flex-col md:flex-row">
+      {/* SIDEBAR */}
       <div className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col justify-between hidden md:flex">
         <div>
             <div className="p-6 flex items-center gap-3 font-bold text-xl border-b border-gray-100"><Shield className="text-blue-600"/> LifeRPG</div>
@@ -220,7 +233,6 @@ const LifeRPG = () => {
             <div className="md:hidden font-bold text-lg"><Shield className="inline mr-2 text-blue-600"/> LifeRPG</div>
             <div className="hidden md:block font-bold text-lg capitalize">{activeTab}</div>
             
-            {/* UPDATED LOGIN BUTTON LOGIC */}
             {authToken ? (
                 <button onClick={logout} className="text-sm bg-gray-100 text-red-600 px-4 py-2 rounded-lg hover:bg-red-50 transition flex items-center gap-2">
                     <LogOut size={16}/> Logout
@@ -233,8 +245,11 @@ const LifeRPG = () => {
         </header>
 
         <div className="flex-1 overflow-y-auto p-6">
+            
+            {/* --- DASHBOARD VIEW (Split by Category) --- */}
             {activeTab === 'dashboard' && (
                 <div className="max-w-4xl mx-auto">
+                    {/* Progress Bar */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8">
                         <div className="flex justify-between items-end mb-2">
                             <div><h2 className="text-2xl font-bold">Today's Progress</h2><p className="text-gray-500 text-sm">Completed {completedCount} / {quests.length} quests.</p></div>
@@ -245,18 +260,23 @@ const LifeRPG = () => {
 
                     {quests.length === 0 && <div className="text-center py-10 text-gray-400">No active quests. Sync Google or Add one!</div>}
 
+                    {/* SECTION 1: ROUTINE QUESTS */}
                     {routineQuests.length > 0 && (
                         <div className="mb-8">
                             <h3 className="font-bold text-gray-500 uppercase tracking-wider text-sm mb-3 flex items-center gap-2"><Repeat size={16}/> Daily Routines (Today)</h3>
                             {routineQuests.map(q => <QuestItem key={q.id} q={q} />)}
                         </div>
                     )}
+
+                    {/* SECTION 2: MAIN QUESTS */}
                     {mainQuests.length > 0 && (
                         <div className="mb-8">
                             <h3 className="font-bold text-gray-500 uppercase tracking-wider text-sm mb-3 flex items-center gap-2"><Star size={16}/> Main Quests</h3>
                             {mainQuests.map(q => <QuestItem key={q.id} q={q} />)}
                         </div>
                     )}
+
+                    {/* SECTION 3: SIDE QUESTS */}
                     {sideQuests.length > 0 && (
                         <div className="mb-8">
                             <h3 className="font-bold text-gray-500 uppercase tracking-wider text-sm mb-3 flex items-center gap-2"><ChevronRight size={16}/> Side Quests</h3>
@@ -266,10 +286,12 @@ const LifeRPG = () => {
                 </div>
             )}
 
+            {/* --- QUEST HUB VIEW --- */}
             {activeTab === 'add' && (
                 <div className="max-w-2xl mx-auto">
                     <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200">
                         <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><PenTool/> Create New Quest</h2>
+                        
                         <div className="space-y-6">
                             <div><label className="block text-sm font-bold text-gray-700 mb-2">Quest Name</label><input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} placeholder="e.g. Morning Jog" className="w-full p-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"/></div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -279,8 +301,14 @@ const LifeRPG = () => {
                                         <>
                                             <label className="block text-sm font-bold text-gray-700 mb-2">Target Time</label>
                                             <div className="relative">
-                                                <select value={timeFrame} onChange={(e) => setTimeFrame(e.target.value)} className="w-full p-4 border border-blue-200 bg-blue-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none font-bold text-blue-800">
-                                                    {timeOptions.map((time, index) => (<option key={index} value={time.value}>{time.label}</option>))}
+                                                <select 
+                                                    value={timeFrame} 
+                                                    onChange={(e) => setTimeFrame(e.target.value)} 
+                                                    className="w-full p-4 border border-blue-200 bg-blue-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none font-bold text-blue-800"
+                                                >
+                                                    {timeOptions.map((time, index) => (
+                                                        <option key={index} value={time.value}>{time.label}</option>
+                                                    ))}
                                                 </select>
                                                 <Clock className="absolute right-4 top-4 text-blue-400" size={20}/>
                                             </div>
@@ -301,6 +329,7 @@ const LifeRPG = () => {
         </div>
       </div>
       
+      {/* LOGS */}
       <div className="w-64 bg-white border-l border-gray-200 hidden xl:block p-4 overflow-y-auto">
         <h3 className="font-bold mb-4 flex items-center gap-2 text-sm text-gray-500 uppercase tracking-wider"><Zap size={16}/> Activity Log</h3>
         <div className="space-y-4">{logs.map(log => (<div key={log.id} className="text-sm border-b border-gray-100 pb-3"><span className="font-bold text-gray-800 block">{log.text}</span><span className="text-xs text-gray-400">{log.time}</span></div>))}</div>
