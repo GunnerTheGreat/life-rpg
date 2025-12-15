@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Zap, Bell, Plus, Star, Repeat, LayoutDashboard, PenTool, CheckCircle, Calendar, Clock, ChevronRight, LogOut, Trash2, User, RotateCcw, Settings, Moon, Sun, Monitor, Sword, Map as MapIcon } from 'lucide-react';
+import { Shield, Zap, Bell, Plus, Star, Repeat, LayoutDashboard, PenTool, CheckCircle, Calendar, Clock, ChevronRight, LogOut, Trash2, User, RotateCcw, Settings, Moon, Sun, Monitor, Sword, Loader2 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 
@@ -9,17 +9,17 @@ const THEMES = {
   light: {
     id: 'light', name: 'Day Mode', 
     bg: 'bg-gray-50', card: 'bg-white', text: 'text-gray-800', subtext: 'text-gray-500', 
-    border: 'border-gray-200', input: 'bg-white border-gray-200', hover: 'hover:bg-gray-50', button: 'bg-black text-white hover:bg-gray-800'
+    border: 'border-gray-200', input: 'bg-white border-gray-200', hover: 'hover:bg-gray-50', button: 'bg-black text-white hover:bg-gray-800', activeTab: 'bg-blue-600 text-white'
   },
   dark: {
     id: 'dark', name: 'Dark Mode', 
     bg: 'bg-gray-900', card: 'bg-gray-800', text: 'text-white', subtext: 'text-gray-400', 
-    border: 'border-gray-700', input: 'bg-gray-700 border-gray-600 text-white', hover: 'hover:bg-gray-700', button: 'bg-blue-600 text-white hover:bg-blue-700'
+    border: 'border-gray-700', input: 'bg-gray-700 border-gray-600 text-white', hover: 'hover:bg-gray-700', button: 'bg-blue-600 text-white hover:bg-blue-700', activeTab: 'bg-blue-500 text-white'
   },
   midnight: {
     id: 'midnight', name: 'Midnight', 
     bg: 'bg-slate-900', card: 'bg-slate-800', text: 'text-blue-50', subtext: 'text-slate-400', 
-    border: 'border-slate-700', input: 'bg-slate-700 border-slate-600 text-white', hover: 'hover:bg-slate-700', button: 'bg-cyan-600 text-white hover:bg-cyan-700'
+    border: 'border-slate-700', input: 'bg-slate-700 border-slate-600 text-white', hover: 'hover:bg-slate-700', button: 'bg-cyan-600 text-white hover:bg-cyan-700', activeTab: 'bg-cyan-500 text-white'
   }
 };
 
@@ -35,6 +35,10 @@ const LifeRPG = () => {
   const [showIgnModal, setShowIgnModal] = useState(false);
   const [newIgnInput, setNewIgnInput] = useState("");
   const [theme, setTheme] = useState(THEMES.light);
+  
+  // LOADING STATE
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("");
 
   // INPUTS
   const [newTask, setNewTask] = useState(""); 
@@ -84,18 +88,23 @@ const LifeRPG = () => {
         if (savedTheme && THEMES[savedTheme]) setTheme(THEMES[savedTheme]);
 
         if (savedToken && savedEmail) {
-            // Don't set token immediately to avoid flash of dashboard if token is invalid
+            setLoadingMessage("Restoring Session...");
+            setIsLoading(true);
             try {
                 const res = await axios.post(`${API_URL}/api/user/login`, { email: savedEmail });
                 if (res.data.exists) {
-                    setAuthToken(savedToken); // Only set token if valid
+                    setAuthToken(savedToken);
                     setUserEmail(savedEmail);
                     setStats(res.data.user.stats);
                     setIgn(res.data.user.ign);
                     addLog(`Welcome back, ${res.data.user.ign}!`, "gain");
                     fetchCalendar(savedToken);
                 } else logout();
-            } catch (err) { console.error("Restore failed"); }
+            } catch (err) { 
+                console.error("Restore failed");
+            } finally {
+                setIsLoading(false);
+            }
         }
     };
     restoreSession();
@@ -115,7 +124,10 @@ const LifeRPG = () => {
 
   const login = useGoogleLogin({
     onSuccess: async (res) => {
+      setIsLoading(true);
+      setLoadingMessage("Connecting to Server...");
       const token = res.access_token;
+      
       try {
           const googleUser = await axios.get('https://www.googleapis.com/oauth2/v1/userinfo', { headers: { Authorization: `Bearer ${token}` } });
           const email = googleUser.data.email;
@@ -127,20 +139,26 @@ const LifeRPG = () => {
           if (dbCheck.data.exists) {
               setStats(dbCheck.data.user.stats);
               setIgn(dbCheck.data.user.ign);
-              setAuthToken(token); // Enable Dashboard
+              setAuthToken(token); 
               fetchCalendar(token);
               addLog(`Welcome back, ${dbCheck.data.user.ign}!`, "gain");
           } else {
-              setAuthToken(token); // Temp enable to show IGN Modal
+              setAuthToken(token); 
               setShowIgnModal(true);
           }
-      } catch (err) { console.error("Login Error", err); }
+      } catch (err) { 
+          alert(`Login Failed: ${err.message}. Please try again.`);
+      } finally {
+          setIsLoading(false);
+      }
     },
+    onError: () => { alert("Google Login Failed."); setIsLoading(false); },
     scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email'
   });
 
   const handleIgnSubmit = async () => {
       if (!newIgnInput) return alert("Please enter a name!");
+      setIsLoading(true);
       try {
           const res = await axios.post(`${API_URL}/api/user/signup`, { email: userEmail, ign: newIgnInput });
           if (res.data.success) {
@@ -151,6 +169,7 @@ const LifeRPG = () => {
               addLog(`Character Created: ${newIgnInput}`, "gain");
           }
       } catch (err) { alert("Failed to create character"); }
+      finally { setIsLoading(false); }
   };
 
   const logout = () => {
@@ -250,7 +269,6 @@ const LifeRPG = () => {
   return (
     <div className={`min-h-screen ${theme.bg} ${theme.text} font-sans flex flex-col relative transition-colors duration-300`}>
       
-      {/* 🆕 IGN MODAL */}
       {showIgnModal && (
           <div className="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4">
               <div className={`${theme.card} rounded-2xl p-8 max-w-md w-full shadow-2xl text-center`}>
@@ -258,40 +276,39 @@ const LifeRPG = () => {
                   <h2 className={`text-2xl font-bold mb-2 ${theme.text}`}>Welcome, Hero!</h2>
                   <p className={`${theme.subtext} mb-6`}>What shall we call you in this world?</p>
                   <input type="text" value={newIgnInput} onChange={(e) => setNewIgnInput(e.target.value)} placeholder="Enter your IGN..." className={`w-full p-4 border-2 rounded-xl text-lg font-bold text-center focus:outline-none focus:border-blue-500 mb-6 ${theme.input}`} autoFocus />
-                  <button onClick={handleIgnSubmit} className={`w-full py-4 rounded-xl font-bold text-lg transition ${theme.button}`}>Start Adventure</button>
+                  <button onClick={handleIgnSubmit} disabled={isLoading} className={`w-full py-4 rounded-xl font-bold text-lg transition flex justify-center items-center gap-2 ${theme.button}`}>
+                    {isLoading ? <Loader2 className="animate-spin"/> : "Start Adventure"}
+                  </button>
               </div>
           </div>
       )}
 
-      {/* 🔒 IF NOT LOGGED IN: SHOW LOGIN SCREEN */}
+      {/* 🔒 LOGIN SCREEN */}
       {!authToken ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-             <div className="mb-6 bg-blue-100 p-6 rounded-full inline-block animate-bounce">
-                <Sword size={64} className="text-blue-600" />
-             </div>
+             <div className="mb-6 bg-blue-100 p-6 rounded-full inline-block animate-bounce"><Sword size={64} className="text-blue-600" /></div>
              <h1 className="text-5xl font-black mb-2 tracking-tight">LifeRPG</h1>
-             <p className={`text-xl ${theme.subtext} mb-12 max-w-md`}>Gamify your life. Turn your daily tasks into epic quests and level up in the real world.</p>
-             
-             <button onClick={() => login()} className={`px-8 py-4 rounded-2xl font-bold text-lg flex items-center gap-3 shadow-lg transform hover:scale-105 transition-all ${theme.button}`}>
-                <Calendar size={24}/> Sync with Google Calendar
+             <p className={`text-xl ${theme.subtext} mb-12 max-w-md`}>Gamify your life. Turn your daily tasks into epic quests.</p>
+             <button onClick={() => login()} disabled={isLoading} className={`px-8 py-4 rounded-2xl font-bold text-lg flex items-center gap-3 shadow-lg transform hover:scale-105 transition-all ${theme.button} ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                {isLoading ? <Loader2 className="animate-spin" size={24}/> : <Calendar size={24}/>}
+                {isLoading ? loadingMessage || "Connecting..." : "Sync with Google Calendar"}
              </button>
-             
              <div className={`mt-12 flex gap-8 ${theme.subtext} text-sm font-bold opacity-60`}>
                 <div className="flex items-center gap-2"><CheckCircle size={16}/> Auto-Sync</div>
-                <div className="flex items-center gap-2"><Shield size={16}/> Secure Login</div>
-                <div className="flex items-center gap-2"><Zap size={16}/> Daily Rewards</div>
+                <div className="flex items-center gap-2"><Shield size={16}/> Secure</div>
              </div>
         </div>
       ) : (
-        /* 🔓 IF LOGGED IN: SHOW DASHBOARD LAYOUT */
+        /* 🔓 DASHBOARD LAYOUT */
         <div className="flex flex-col md:flex-row h-screen">
+          {/* DESKTOP SIDEBAR */}
           <div className={`w-full md:w-64 ${theme.card} border-r ${theme.border} flex flex-col justify-between hidden md:flex`}>
             <div>
                 <div className={`p-6 flex items-center gap-3 font-bold text-xl border-b ${theme.border}`}><Shield className="text-blue-600"/> LifeRPG</div>
                 <nav className="p-4 space-y-2">
-                    <button onClick={() => setActiveTab("dashboard")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 text-white font-bold shadow-md' : `${theme.subtext} ${theme.hover}`}`}><LayoutDashboard size={20}/> Dashboard</button>
-                    <button onClick={() => setActiveTab("add")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'add' ? 'bg-blue-600 text-white font-bold shadow-md' : `${theme.subtext} ${theme.hover}`}`}><PenTool size={20}/> Quest Hub</button>
-                    <button onClick={() => setActiveTab("settings")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'settings' ? 'bg-blue-600 text-white font-bold shadow-md' : `${theme.subtext} ${theme.hover}`}`}><Settings size={20}/> Settings</button>
+                    <button onClick={() => setActiveTab("dashboard")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'dashboard' ? theme.activeTab : `${theme.subtext} ${theme.hover}`}`}><LayoutDashboard size={20}/> Dashboard</button>
+                    <button onClick={() => setActiveTab("add")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'add' ? theme.activeTab : `${theme.subtext} ${theme.hover}`}`}><PenTool size={20}/> Quest Hub</button>
+                    <button onClick={() => setActiveTab("settings")} className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeTab === 'settings' ? theme.activeTab : `${theme.subtext} ${theme.hover}`}`}><Settings size={20}/> Settings</button>
                 </nav>
             </div>
             <div className={`p-6 ${theme.bg} border-t ${theme.border}`}>
@@ -309,7 +326,7 @@ const LifeRPG = () => {
                 <button onClick={logout} className="text-sm bg-red-100 text-red-600 px-4 py-2 rounded-lg hover:bg-red-200 transition flex items-center gap-2"><LogOut size={16}/> Logout</button>
             </header>
 
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-6 pb-24 md:pb-6">
                 {activeTab === 'dashboard' && (
                     <div className="max-w-4xl mx-auto">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -387,7 +404,23 @@ const LifeRPG = () => {
                     </div>
                 )}
             </div>
+
+            {/* 🆕 MOBILE BOTTOM NAVIGATION */}
+            <div className={`fixed bottom-0 left-0 right-0 h-20 ${theme.card} border-t ${theme.border} flex justify-around items-center z-50 md:hidden`}>
+                <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 ${activeTab === 'dashboard' ? 'text-blue-500 font-bold' : theme.subtext}`}>
+                    <LayoutDashboard size={24} />
+                    <span className="text-xs">Dashboard</span>
+                </button>
+                <button onClick={() => setActiveTab('add')} className={`flex flex-col items-center gap-1 ${activeTab === 'add' ? 'text-blue-500 font-bold' : theme.subtext}`}>
+                    <div className="bg-blue-600 text-white p-3 rounded-full -mt-6 shadow-lg border-4 border-white"><Plus size={24} /></div>
+                </button>
+                <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-1 ${activeTab === 'settings' ? 'text-blue-500 font-bold' : theme.subtext}`}>
+                    <Settings size={24} />
+                    <span className="text-xs">Settings</span>
+                </button>
+            </div>
           </div>
+
           <div className={`w-64 ${theme.card} border-l ${theme.border} hidden xl:block p-4 overflow-y-auto`}>
             <h3 className={`font-bold mb-4 flex items-center gap-2 text-sm uppercase tracking-wider ${theme.subtext}`}><Zap size={16}/> Activity Log</h3>
             <div className="space-y-4">{logs.map(log => (<div key={log.id} className={`text-sm border-b pb-3 ${theme.border}`}><span className={`font-bold block ${theme.text}`}>{log.text}</span><span className={`text-xs ${theme.subtext}`}>{log.time}</span></div>))}</div>
