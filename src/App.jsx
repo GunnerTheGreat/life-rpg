@@ -12,30 +12,32 @@ const LifeRPG = () => {
   const [quests, setQuests] = useState([]);
   const [logs, setLogs] = useState([{ id: 1, text: "System Initialized.", type: "gain", time: "Now" }]);
   const [authToken, setAuthToken] = useState(null);
-  
-  // USER IDENTITY
   const [userEmail, setUserEmail] = useState(null);
   const [ign, setIgn] = useState("Adventurer");
   const [showIgnModal, setShowIgnModal] = useState(false);
   const [newIgnInput, setNewIgnInput] = useState("");
-
-  // INPUTS
   const [newTask, setNewTask] = useState(""); 
   const [questType, setQuestType] = useState("side"); 
   const [deadline, setDeadline] = useState(""); 
   const [timeFrame, setTimeFrame] = useState("09:00"); 
   const [routineDays, setRoutineDays] = useState("");
 
-  // DEDUPE
   const cleanedQuests = quests.filter((q, index, self) =>
     index === self.findIndex((t) => (
       t.task === q.task && new Date(t.time).getTime() === new Date(q.time).getTime()
     ))
   );
 
+  // 🛡️ DATE HELPERS
+  const isToday = (dateString) => {
+      const d = new Date(dateString);
+      const today = new Date();
+      return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+  };
+
   // PROGRESS
   const getProgress = (type) => {
-      const typeQuests = cleanedQuests.filter(q => q.type === type);
+      const typeQuests = cleanedQuests.filter(q => q.type === type && (isToday(q.time) || !q.completed));
       const total = typeQuests.length;
       if (total === 0) return 0;
       const completed = typeQuests.filter(q => q.completed).length;
@@ -45,10 +47,14 @@ const LifeRPG = () => {
   const mainProgress = getProgress('main');
   const sideProgress = getProgress('side');
 
-  // LISTS - 🆕 SHOW ALL QUESTS (Even Completed Ones) so we can Undo them
-  const routineQuests = cleanedQuests.filter(q => q.type === 'routine');
-  const mainQuests = cleanedQuests.filter(q => q.type === 'main');
-  const sideQuests = cleanedQuests.filter(q => q.type === 'side');
+  // 🛡️ VISIBILITY FILTER: Hide Completed tasks from yesterday!
+  // We keep: 1. Uncompleted tasks (Overdue or active)
+  //          2. Completed tasks ONLY if they are from TODAY
+  const filterList = (type) => cleanedQuests.filter(q => q.type === type && (!q.completed || isToday(q.time)));
+
+  const routineQuests = filterList('routine');
+  const mainQuests = filterList('main');
+  const sideQuests = filterList('side');
 
   const generateTimeOptions = () => {
     const times = [];
@@ -65,7 +71,6 @@ const LifeRPG = () => {
   };
   const timeOptions = generateTimeOptions();
 
-  // INIT
   useEffect(() => {
     const restoreSession = async () => {
         const savedToken = localStorage.getItem('googleAuthToken');
@@ -170,19 +175,12 @@ const LifeRPG = () => {
     } catch (err) { alert("Failed to save quest"); }
   };
 
-  // 🆕 TOGGLE QUEST (Complete or Un-complete)
   const toggleQuest = async (q) => {
-      // 1. Determine Action: If currently done, we Undo. If not, we Complete.
       const isUndoing = q.completed;
-      
-      // 2. Optimistic UI Update
       setQuests(prev => prev.map(item => item.id === q.id ? { ...item, completed: !isUndoing } : item));
 
-      // 3. Stats Math
       let xpGain = q.type === 'main' ? 200 : q.type === 'routine' ? 30 : 50;
       let coinGain = q.type === 'main' ? 100 : 20;
-
-      // If undoing, we SUBTRACT stats. If completing, we ADD.
       const multiplier = isUndoing ? -1 : 1;
       
       const newStats = { 
@@ -191,7 +189,6 @@ const LifeRPG = () => {
           coins: Math.max(0, stats.coins + (coinGain * multiplier)) 
       };
 
-      // Level Logic (Only on gain)
       if (!isUndoing && newStats.exp >= newStats.maxExp) {
           newStats.level += 1;
           newStats.exp -= newStats.maxExp;
@@ -203,14 +200,10 @@ const LifeRPG = () => {
       saveStats(newStats); 
       addLog(`${isUndoing ? 'Undid' : 'Completed'} ${q.type} quest! ${isUndoing ? '-' : '+'}${xpGain} XP`, isUndoing ? 'loss' : 'gain');
 
-      // 4. Server Call
       if (authToken) {
           try {
-              if (isUndoing) {
-                  await axios.post(`${API_URL}/api/uncomplete-quest`, { token: authToken, eventId: q.id, task: q.task });
-              } else {
-                  await axios.post(`${API_URL}/api/complete-quest`, { token: authToken, eventId: q.id, task: q.task });
-              }
+              if (isUndoing) await axios.post(`${API_URL}/api/uncomplete-quest`, { token: authToken, eventId: q.id, task: q.task });
+              else await axios.post(`${API_URL}/api/complete-quest`, { token: authToken, eventId: q.id, task: q.task });
           } catch (err) {}
       }
   };
@@ -250,8 +243,6 @@ const LifeRPG = () => {
         <div className="flex gap-2">
             <button onClick={() => sendReminder(q)} className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg"><Bell size={18} /></button>
             <button onClick={() => deleteQuest(q.id, q.type)} className="p-2 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={18} /></button>
-            
-            {/* 🆕 TOGGLE BUTTON */}
             <button 
                 onClick={() => toggleQuest(q)} 
                 className={`px-3 py-1.5 font-bold text-sm rounded-lg flex items-center gap-1 transition-all ${
@@ -279,7 +270,6 @@ const LifeRPG = () => {
               </div>
           </div>
       )}
-
       <div className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col justify-between hidden md:flex">
         <div>
             <div className="p-6 flex items-center gap-3 font-bold text-xl border-b border-gray-100"><Shield className="text-blue-600"/> LifeRPG</div>
@@ -295,7 +285,6 @@ const LifeRPG = () => {
             <div><div className="flex justify-between text-xs font-bold mb-1"><span>XP ⚡</span><span>{stats.exp} / {stats.maxExp}</span></div><div className="w-full bg-gray-200 rounded-full h-1.5"><div className="bg-blue-600 h-1.5 rounded-full" style={{ width: `${(stats.exp / stats.maxExp) * 100}%` }}></div></div></div>
         </div>
       </div>
-
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         <header className="bg-white h-16 border-b border-gray-200 flex items-center justify-between px-6 shadow-sm z-10">
             <div className="md:hidden font-bold text-lg"><Shield className="inline mr-2 text-blue-600"/> LifeRPG</div>
@@ -321,7 +310,6 @@ const LifeRPG = () => {
                         </div>
                     </div>
 
-                    {/* SHOW ALL QUESTS (Both completed and uncompleted so we can UNDO) */}
                     {routineQuests.length > 0 && (
                         <div className="mb-8">
                             <h3 className="font-bold text-gray-500 uppercase tracking-wider text-sm mb-3 flex items-center gap-2"><Repeat size={16}/> Daily Routines</h3>

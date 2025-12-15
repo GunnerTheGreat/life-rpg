@@ -78,6 +78,7 @@ app.post('/api/sync-calendar', async (req, res) => {
     oauth2Client.setCredentials({ access_token: token });
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     
+    // Look back 24h to catch ongoing tasks, but filter strictly later
     const startOfSearch = new Date(); 
     startOfSearch.setDate(startOfSearch.getDate() - 1); 
     startOfSearch.setHours(0, 0, 0, 0);
@@ -89,7 +90,7 @@ app.post('/api/sync-calendar', async (req, res) => {
         const response = await calendar.events.list({
             calendarId: 'primary',
             timeMin: startOfSearch.toISOString(),
-            maxResults: 100,
+            maxResults: 150, // Increased to catch duplicates
             singleEvents: true,
             orderBy: 'startTime',
         });
@@ -110,13 +111,17 @@ app.post('/api/sync-calendar', async (req, res) => {
                 completed: event.summary.startsWith('✅')
             }));
 
+        // 🛡️ FIXED DEDUPLICATION (Now includes DATE)
         const uniqueEvents = [];
         const seen = new Set();
         rawEvents.forEach(event => {
             const name = event.task.trim().toLowerCase();
             const dateObj = new Date(event.time);
-            const timeKey = `${dateObj.getHours()}:${dateObj.getMinutes()}`;
+            
+            // KEY FIX: We include the DATE (getDate) so Dec 15 and Dec 16 are DIFFERENT
+            const timeKey = `${dateObj.getDate()}_${dateObj.getHours()}:${dateObj.getMinutes()}`;
             const uniqueKey = `${name}-${timeKey}`;
+            
             if (!seen.has(uniqueKey)) {
                 seen.add(uniqueKey);
                 uniqueEvents.push(event);
@@ -160,7 +165,6 @@ app.post('/api/add-quest', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, error: error.message }); }
 });
 
-// ✅ COMPLETE QUEST (Adds Checkmark)
 app.post('/api/complete-quest', async (req, res) => {
     const { token, eventId, task } = req.body;
     oauth2Client.setCredentials({ access_token: token });
@@ -171,13 +175,11 @@ app.post('/api/complete-quest', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false }); }
 });
 
-// ↩️ UN-COMPLETE QUEST (Removes Checkmark - NEW!)
 app.post('/api/uncomplete-quest', async (req, res) => {
     const { token, eventId, task } = req.body;
     oauth2Client.setCredentials({ access_token: token });
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     try {
-        // We set the summary back to just the task name (removing ✅)
         await calendar.events.patch({ calendarId: 'primary', eventId: eventId, requestBody: { summary: task } });
         res.json({ success: true });
     } catch (error) { res.status(500).json({ success: false }); }
