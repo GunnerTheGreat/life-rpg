@@ -11,7 +11,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// --- 1. DATABASE CONNECTION ---
+// ---DATABASE CONNECTION---
 if (process.env.MONGO_URI) {
     mongoose.connect(process.env.MONGO_URI)
         .then(() => console.log("✅ Connected to MongoDB"))
@@ -34,14 +34,14 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- 2. GOOGLE CONFIG ---
+// ---GOOGLE CONFIG---
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
     process.env.CLIENT_URL || 'http://localhost:5173'
 );
 
-// --- 3. API ROUTES ---
+// ---API ROUTES---
 
 app.post('/api/user/login', async (req, res) => {
     const { email } = req.body;
@@ -78,7 +78,6 @@ app.post('/api/sync-calendar', async (req, res) => {
     oauth2Client.setCredentials({ access_token: token });
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     
-    // Look back 48 hours to be absolutely safe with timezones
     const startOfSearch = new Date(); 
     startOfSearch.setDate(startOfSearch.getDate() - 2); 
     startOfSearch.setHours(0, 0, 0, 0);
@@ -112,7 +111,6 @@ app.post('/api/sync-calendar', async (req, res) => {
                 completed: event.summary.startsWith('✅')
             }));
 
-        // 🛡️ TIMEZONE-AWARE DEDUPLICATION
         const uniqueEvents = [];
         const seen = new Set();
         

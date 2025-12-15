@@ -24,7 +24,6 @@ const THEMES = {
 };
 
 const LifeRPG = () => {
-  // STATE
   const [activeTab, setActiveTab] = useState("dashboard");
   const [stats, setStats] = useState({ level: 1, coins: 0, hp: 1000, maxHp: 1000, exp: 0, maxExp: 1000 });
   const [quests, setQuests] = useState([]);
@@ -34,20 +33,15 @@ const LifeRPG = () => {
   const [ign, setIgn] = useState("Adventurer");
   const [showIgnModal, setShowIgnModal] = useState(false);
   const [newIgnInput, setNewIgnInput] = useState("");
-  const [theme, setTheme] = useState(THEMES.light);
-  
-  // LOADING STATE
+  const [theme, setTheme] = useState(THEMES.light);  
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
-
-  // INPUTS
   const [newTask, setNewTask] = useState(""); 
   const [questType, setQuestType] = useState("side"); 
   const [deadline, setDeadline] = useState(""); 
   const [timeFrame, setTimeFrame] = useState("09:00"); 
   const [routineDays, setRoutineDays] = useState("");
 
-  // DEDUPE & SORT
   let cleanedQuests = quests.filter((q, index, self) =>
     index === self.findIndex((t) => (
       t.task === q.task && new Date(t.time).getTime() === new Date(q.time).getTime()
@@ -55,7 +49,6 @@ const LifeRPG = () => {
   );
   cleanedQuests.sort((a, b) => new Date(a.time) - new Date(b.time));
 
-  // HELPERS
   const isToday = (dateString) => {
       const d = new Date(dateString);
       const today = new Date();
@@ -79,7 +72,6 @@ const LifeRPG = () => {
   const mainQuests = filterList('main');
   const sideQuests = filterList('side');
 
-  // INIT
   useEffect(() => {
     const restoreSession = async () => {
         const savedToken = localStorage.getItem('googleAuthToken');
@@ -283,7 +275,7 @@ const LifeRPG = () => {
           </div>
       )}
 
-      {/* 🔒 LOGIN SCREEN */}
+      {/*LOGIN SCREEN */}
       {!authToken ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
              <div className="mb-6 bg-blue-100 p-6 rounded-full inline-block animate-bounce"><Sword size={64} className="text-blue-600" /></div>
@@ -299,9 +291,9 @@ const LifeRPG = () => {
              </div>
         </div>
       ) : (
-        /* 🔓 DASHBOARD LAYOUT */
+        /*DASHBOARD LAYOUT */
         <div className="flex flex-col md:flex-row h-screen">
-          {/* DESKTOP SIDEBAR */}
+          {/*DESKTOP SIDEBAR */}
           <div className={`w-full md:w-64 ${theme.card} border-r ${theme.border} flex flex-col justify-between hidden md:flex`}>
             <div>
                 <div className={`p-6 flex items-center gap-3 font-bold text-xl border-b ${theme.border}`}><Shield className="text-blue-600"/> LifeRPG</div>
@@ -405,7 +397,7 @@ const LifeRPG = () => {
                 )}
             </div>
 
-            {/* 🆕 MOBILE BOTTOM NAVIGATION */}
+            {/* MOBILE BOTTOM NAVIGATION */}
             <div className={`fixed bottom-0 left-0 right-0 h-20 ${theme.card} border-t ${theme.border} flex justify-around items-center z-50 md:hidden`}>
                 <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 ${activeTab === 'dashboard' ? 'text-blue-500 font-bold' : theme.subtext}`}>
                     <LayoutDashboard size={24} />
