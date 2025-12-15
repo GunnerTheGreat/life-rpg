@@ -21,7 +21,7 @@ if (process.env.MONGO_URI) {
 }
 
 const userSchema = new mongoose.Schema({
-    userId: { type: String, default: "player1" },
+    userId: { type: String, default: "guest" }, // Changed default to guest
     stats: {
         level: { type: Number, default: 1 },
         coins: { type: Number, default: 0 },
@@ -40,25 +40,52 @@ const oauth2Client = new google.auth.OAuth2(
     process.env.CLIENT_URL || 'http://localhost:5173'
 );
 
+// --- HELPER: GET EMAIL FROM TOKEN ---
+// This asks Google: "Who does this token belong to?"
+const getUserEmail = async (token) => {
+    if (!token) return "guest"; // If no login, use "guest" save file
+    try {
+        oauth2Client.setCredentials({ access_token: token });
+        const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+        const userInfo = await oauth2.userinfo.get();
+        return userInfo.data.email; // Returns "gunner@gmail.com"
+    } catch (e) {
+        console.error("Auth Error:", e.message);
+        return "guest";
+    }
+};
+
 // --- 3. API ROUTES ---
 
-app.get('/api/user', async (req, res) => {
+// LOAD GAME (Updated to support Multiple Users)
+// We changed this from GET to POST so we can securely send the Token
+app.post('/api/user/load', async (req, res) => {
     try {
-        let user = await User.findOne({ userId: "player1" });
-        if (!user) user = await User.create({ userId: "player1" });
+        const { token } = req.body;
+        const email = await getUserEmail(token); // Get the real email
+
+        let user = await User.findOne({ userId: email });
+        if (!user) {
+            // Create new save file for this specific email
+            console.log(`✨ Creating new Hero: ${email}`);
+            user = await User.create({ userId: email });
+        }
         res.json(user.stats);
     } catch (e) { res.status(500).json({ error: "DB Error" }); }
 });
 
+// SAVE GAME (Updated)
 app.post('/api/user/update', async (req, res) => {
     try {
-        const { stats } = req.body;
-        await User.findOneAndUpdate({ userId: "player1" }, { stats });
+        const { stats, token } = req.body;
+        const email = await getUserEmail(token); // Ensure we save to the right person
+        
+        await User.findOneAndUpdate({ userId: email }, { stats });
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: "Save Error" }); }
 });
 
-// SYNC CALENDAR (FIXED: Deduplication by Minute)
+// SYNC CALENDAR (Deduplicated)
 app.post('/api/sync-calendar', async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: "No Token" });
@@ -66,7 +93,6 @@ app.post('/api/sync-calendar', async (req, res) => {
     oauth2Client.setCredentials({ access_token: token });
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     
-    // Look back 24h
     const startOfSearch = new Date(); 
     startOfSearch.setDate(startOfSearch.getDate() - 1); 
     startOfSearch.setHours(0, 0, 0, 0);
@@ -88,10 +114,7 @@ app.post('/api/sync-calendar', async (req, res) => {
                 if (!event.summary) return false;
                 const eventDate = new Date(event.start.dateTime || event.start.date);
                 const type = event.description || 'side';
-
-                if (type === 'routine') {
-                    return eventDate < endOfToday && eventDate > startOfSearch;
-                }
+                if (type === 'routine') return eventDate < endOfToday && eventDate > startOfSearch;
                 return true; 
             })
             .map(event => ({
@@ -102,20 +125,14 @@ app.post('/api/sync-calendar', async (req, res) => {
                 completed: event.summary.startsWith('✅')
             }));
 
-        // 🛡️ DEDUPLICATION FIX
-        // We now filter by NAME + HOUR + MINUTE.
-        // This ignores seconds/milliseconds differences (which cause duplicates).
+        // Deduplication
         const uniqueEvents = [];
         const seen = new Set();
-
         rawEvents.forEach(event => {
             const name = event.task.trim().toLowerCase();
             const dateObj = new Date(event.time);
-            
-            // Create a "Time Slot" key (e.g. "morning jog-6:30")
             const timeKey = `${dateObj.getHours()}:${dateObj.getMinutes()}`;
             const uniqueKey = `${name}-${timeKey}`;
-
             if (!seen.has(uniqueKey)) {
                 seen.add(uniqueKey);
                 uniqueEvents.push(event);
@@ -129,6 +146,7 @@ app.post('/api/sync-calendar', async (req, res) => {
     }
 });
 
+// ADD QUEST
 app.post('/api/add-quest', async (req, res) => {
     const { token, task, type, deadline, days } = req.body;
     oauth2Client.setCredentials({ access_token: token });

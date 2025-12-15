@@ -3,7 +3,6 @@ import { Shield, Zap, Bell, Plus, Star, Repeat, LayoutDashboard, PenTool, CheckC
 import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 
-// 🌎 AUTOMATIC URL SWITCHER
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 const LifeRPG = () => {
@@ -21,19 +20,17 @@ const LifeRPG = () => {
   const [timeFrame, setTimeFrame] = useState("09:00"); 
   const [routineDays, setRoutineDays] = useState("");
 
-  // 🛡️ FRONTEND DEDUPLICATION (The Final Guard)
-  // This removes duplicate quests if they have the same Name AND Time.
+  // DEDUPLICATION FILTER
   const cleanedQuests = quests.filter((q, index, self) =>
     index === self.findIndex((t) => (
       t.task === q.task && new Date(t.time).getTime() === new Date(q.time).getTime()
     ))
   );
 
-  // --- MATH (Uses cleaned list) ---
   const completedCount = cleanedQuests.filter(q => q.completed).length;
   const progressPercent = cleanedQuests.length > 0 ? (completedCount / cleanedQuests.length) * 100 : 0;
 
-  // --- VISUAL FILTERS (Uses cleaned list) ---
+  // VISUAL FILTERS
   const routineQuests = cleanedQuests.filter(q => q.type === 'routine' && !q.completed);
   const mainQuests = cleanedQuests.filter(q => q.type === 'main' && !q.completed);
   const sideQuests = cleanedQuests.filter(q => q.type === 'side' && !q.completed);
@@ -53,44 +50,62 @@ const LifeRPG = () => {
   };
   const timeOptions = generateTimeOptions();
 
-  // --- LOAD GAME ---
+  // --- INITIAL LOAD ---
   useEffect(() => {
-    const loadGame = async () => {
-        try {
-            const res = await axios.get(`${API_URL}/api/user`);
-            if (res.data) setStats(res.data);
-        } catch (err) {}
-
+    const init = async () => {
+        // 1. Try to recover session
         const savedToken = localStorage.getItem('googleAuthToken');
         if (savedToken) {
             setAuthToken(savedToken);
             addLog("Restoring Session...", "gain");
-            fetchCalendar(savedToken); 
+            // Load THAT user's data
+            await loadUserData(savedToken);
+            await fetchCalendar(savedToken);
+        } else {
+            // Load "Guest" data if no login
+            await loadUserData(null);
         }
     };
-    loadGame();
+    init();
   }, []);
+
+  // --- NEW FUNCTION: Load User Data ---
+  const loadUserData = async (token) => {
+      try {
+          // We send the token (if it exists) so the server knows WHO to load
+          const res = await axios.post(`${API_URL}/api/user/load`, { token });
+          if (res.data) setStats(res.data);
+      } catch (err) { console.error("Load Error", err); }
+  };
 
   const saveStats = async (newStats) => {
     setStats(newStats); 
-    try { await axios.post(`${API_URL}/api/user/update`, { stats: newStats }); } catch (err) {}
+    try { 
+        // Send token so we save to the correct user
+        await axios.post(`${API_URL}/api/user/update`, { stats: newStats, token: authToken }); 
+    } catch (err) {}
   };
 
   const login = useGoogleLogin({
     onSuccess: async (res) => {
       localStorage.setItem('googleAuthToken', res.access_token);
       setAuthToken(res.access_token);
-      fetchCalendar(res.access_token);
       addLog("Google Calendar Synced", "gain");
+      
+      // RELOAD EVERYTHING FOR THE NEW USER
+      await loadUserData(res.access_token); // Load THIS user's XP/Coins
+      await fetchCalendar(res.access_token); // Load THIS user's Quests
     },
-    scope: 'https://www.googleapis.com/auth/calendar.events'
+    scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email' // Added Email Scope
   });
 
-  const logout = () => {
+  const logout = async () => {
       localStorage.removeItem('googleAuthToken');
       setAuthToken(null);
       setQuests([]);
       addLog("Logged out.", "loss");
+      // Revert to Guest Stats
+      await loadUserData(null);
   };
 
   const fetchCalendar = async (token) => {
@@ -129,7 +144,6 @@ const LifeRPG = () => {
   };
 
   const completeQuest = async (id, taskName, type) => {
-    // Optimistic Update
     setQuests(prev => prev.map(q => q.id === id ? { ...q, completed: true } : q));
     
     let xpGain = type === 'main' ? 200 : type === 'routine' ? 30 : 50;
@@ -205,7 +219,6 @@ const LifeRPG = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans flex flex-col md:flex-row">
-      {/* SIDEBAR */}
       <div className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col justify-between hidden md:flex">
         <div>
             <div className="p-6 flex items-center gap-3 font-bold text-xl border-b border-gray-100"><Shield className="text-blue-600"/> LifeRPG</div>
@@ -231,7 +244,6 @@ const LifeRPG = () => {
         <div className="flex-1 overflow-y-auto p-6">
             {activeTab === 'dashboard' && (
                 <div className="max-w-4xl mx-auto">
-                    {/* PROGRESS BAR */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8">
                         <div className="flex justify-between items-end mb-2">
                             <div><h2 className="text-2xl font-bold">Today's Progress</h2><p className="text-gray-500 text-sm">Completed {completedCount} / {cleanedQuests.length} quests.</p></div>
