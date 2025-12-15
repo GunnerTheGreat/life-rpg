@@ -19,15 +19,24 @@ const LifeRPG = () => {
   const [questType, setQuestType] = useState("side"); 
   const [deadline, setDeadline] = useState(""); 
   const [timeFrame, setTimeFrame] = useState("09:00"); 
-  const [routineDays, setRoutineDays] = useState(""); // NEW STATE FOR DAYS
+  const [routineDays, setRoutineDays] = useState("");
 
-  const completedCount = quests.filter(q => q.completed).length;
-  const progressPercent = quests.length > 0 ? (completedCount / quests.length) * 100 : 0;
+  // 🛡️ FRONTEND DEDUPLICATION (The Final Guard)
+  // This removes duplicate quests if they have the same Name AND Time.
+  const cleanedQuests = quests.filter((q, index, self) =>
+    index === self.findIndex((t) => (
+      t.task === q.task && new Date(t.time).getTime() === new Date(q.time).getTime()
+    ))
+  );
 
-  // VISUAL FILTERS
-  const routineQuests = quests.filter(q => q.type === 'routine' && !q.completed);
-  const mainQuests = quests.filter(q => q.type === 'main' && !q.completed);
-  const sideQuests = quests.filter(q => q.type === 'side' && !q.completed);
+  // --- MATH (Uses cleaned list) ---
+  const completedCount = cleanedQuests.filter(q => q.completed).length;
+  const progressPercent = cleanedQuests.length > 0 ? (completedCount / cleanedQuests.length) * 100 : 0;
+
+  // --- VISUAL FILTERS (Uses cleaned list) ---
+  const routineQuests = cleanedQuests.filter(q => q.type === 'routine' && !q.completed);
+  const mainQuests = cleanedQuests.filter(q => q.type === 'main' && !q.completed);
+  const sideQuests = cleanedQuests.filter(q => q.type === 'side' && !q.completed);
 
   const generateTimeOptions = () => {
     const times = [];
@@ -109,19 +118,19 @@ const LifeRPG = () => {
         finalDeadline = date.toISOString();
     } 
     try {
-      // Pass the 'days' variable to the server
       await axios.post(`${API_URL}/api/add-quest`, {
         token: authToken, task: newTask, type: questType, deadline: finalDeadline, days: routineDays
       });
       setTimeout(() => fetchCalendar(authToken), 1000);
       setNewTask("");
-      setRoutineDays(""); // Reset
+      setRoutineDays("");
       setActiveTab("dashboard"); 
     } catch (err) { alert("Failed to save quest"); }
   };
 
   const completeQuest = async (id, taskName, type) => {
-    setQuests(quests.map(q => q.id === id ? { ...q, completed: true } : q));
+    // Optimistic Update
+    setQuests(prev => prev.map(q => q.id === id ? { ...q, completed: true } : q));
     
     let xpGain = type === 'main' ? 200 : type === 'routine' ? 30 : 50;
     let coinGain = type === 'main' ? 100 : 20;
@@ -149,7 +158,7 @@ const LifeRPG = () => {
   };
 
   const deleteQuest = async (id, type) => {
-      setQuests(quests.filter(q => q.id !== id));
+      setQuests(prev => prev.filter(q => q.id !== id));
       addLog(`Deleted ${type} quest.`, 'loss');
       if (authToken) {
           try {
@@ -196,7 +205,7 @@ const LifeRPG = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans flex flex-col md:flex-row">
-      {/* SIDEBAR (Hidden on mobile) */}
+      {/* SIDEBAR */}
       <div className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col justify-between hidden md:flex">
         <div>
             <div className="p-6 flex items-center gap-3 font-bold text-xl border-b border-gray-100"><Shield className="text-blue-600"/> LifeRPG</div>
@@ -225,7 +234,7 @@ const LifeRPG = () => {
                     {/* PROGRESS BAR */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8">
                         <div className="flex justify-between items-end mb-2">
-                            <div><h2 className="text-2xl font-bold">Today's Progress</h2><p className="text-gray-500 text-sm">Completed {completedCount} / {quests.length} quests.</p></div>
+                            <div><h2 className="text-2xl font-bold">Today's Progress</h2><p className="text-gray-500 text-sm">Completed {completedCount} / {cleanedQuests.length} quests.</p></div>
                             <span className="text-3xl font-bold text-blue-600">{Math.round(progressPercent)}%</span>
                         </div>
                         <div className="w-full bg-gray-100 rounded-full h-4 overflow-hidden"><div className="bg-green-500 h-4 rounded-full transition-all duration-700 ease-out" style={{ width: `${progressPercent}%` }}></div></div>
@@ -249,7 +258,7 @@ const LifeRPG = () => {
                             {sideQuests.map(q => <QuestItem key={q.id} q={q} />)}
                         </div>
                     )}
-                    {quests.length === 0 && <div className="text-center py-10 text-gray-400">No active quests. Sync Google or Add one!</div>}
+                    {cleanedQuests.length === 0 && <div className="text-center py-10 text-gray-400">No active quests. Sync Google or Add one!</div>}
                 </div>
             )}
 
@@ -272,7 +281,6 @@ const LifeRPG = () => {
                                                 <Clock className="absolute right-4 top-4 text-blue-400" size={20}/>
                                             </div>
                                             
-                                            {/* NEW DURATION INPUT */}
                                             <label className="block text-sm font-bold text-gray-700 mt-4 mb-2">Duration (Days)</label>
                                             <input type="number" value={routineDays} onChange={(e) => setRoutineDays(e.target.value)} placeholder="e.g. 30 (Leave empty for Forever)" className="w-full p-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-500"/>
                                         </>
