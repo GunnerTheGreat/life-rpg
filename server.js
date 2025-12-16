@@ -11,7 +11,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ---DATABASE CONNECTION---
+// --- 1. DATABASE CONNECTION ---
 if (process.env.MONGO_URI) {
     mongoose.connect(process.env.MONGO_URI)
         .then(() => console.log("✅ Connected to MongoDB"))
@@ -34,14 +34,14 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// ---GOOGLE CONFIG---
+// --- 2. GOOGLE CONFIG ---
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
     process.env.CLIENT_URL || 'http://localhost:5173'
 );
 
-// ---API ROUTES---
+// --- 3. API ROUTES ---
 
 app.post('/api/user/login', async (req, res) => {
     const { email } = req.body;
@@ -71,6 +71,7 @@ app.post('/api/user/update', async (req, res) => {
     } catch (e) { res.status(500).json({ error: "Save Error" }); }
 });
 
+// SYNC CALENDAR (STRICT MANILA DATE FILTER)
 app.post('/api/sync-calendar', async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: "No Token" });
@@ -78,12 +79,15 @@ app.post('/api/sync-calendar', async (req, res) => {
     oauth2Client.setCredentials({ access_token: token });
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     
+    // 1. Calculate "Manila Today"
+    const nowUtc = new Date();
+    // Add 8 Hours to get Manila Time
+    const nowManila = new Date(nowUtc.getTime() + (8 * 60 * 60 * 1000));
+    const manilaDay = nowManila.getDate(); // e.g., 16
+
+    // Look back 48h to be safe
     const startOfSearch = new Date(); 
     startOfSearch.setDate(startOfSearch.getDate() - 2); 
-    startOfSearch.setHours(0, 0, 0, 0);
-    
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
 
     try {
         const response = await calendar.events.list({
@@ -97,10 +101,24 @@ app.post('/api/sync-calendar', async (req, res) => {
         const rawEvents = response.data.items
             .filter(event => {
                 if (!event.summary) return false;
-                const eventDate = new Date(event.start.dateTime || event.start.date);
+                
+                // Get Task Time
+                const eventUtc = new Date(event.start.dateTime || event.start.date);
+                // Convert Task Time to Manila Time
+                const eventManila = new Date(eventUtc.getTime() + (8 * 60 * 60 * 1000));
+                
                 const type = event.description || 'side';
-                // Only show routines for Today or Yesterday (to catch overdue)
-                if (type === 'routine') return eventDate < endOfToday && eventDate > startOfSearch;
+
+                // 2. STRICT ROUTINE FILTER
+                if (type === 'routine') {
+                    // It must be from TODAY (16) or EARLIER (Overdue)
+                    // If eventManila.getDate() is 17, and today is 16, this returns FALSE.
+                    // (We also check Month/Year to be safe)
+                    const isFuture = eventManila > nowManila && eventManila.getDate() !== manilaDay;
+                    
+                    if (isFuture) return false; // HIDE TOMORROW'S TASKS
+                    return true;
+                }
                 return true; 
             })
             .map(event => ({
@@ -111,17 +129,14 @@ app.post('/api/sync-calendar', async (req, res) => {
                 completed: event.summary.startsWith('✅')
             }));
 
+        // DEDUPLICATION
         const uniqueEvents = [];
         const seen = new Set();
-        
         rawEvents.forEach(event => {
             const name = event.task.trim().toLowerCase();
-            
-            // 1. Convert UTC time to Manila Time (+8 Hours) for correct "Day" calculation
-            const utcTime = new Date(event.time).getTime();
-            const manilaTime = new Date(utcTime + (8 * 60 * 60 * 1000));
-            
-            // 2. Create Key using Manila Date (e.g., "16_6:30")
+            const dateObj = new Date(event.time);
+            // Dedupe key includes the specific date to avoid mixing days
+            const manilaTime = new Date(dateObj.getTime() + (8 * 60 * 60 * 1000));
             const timeKey = `${manilaTime.getDate()}_${manilaTime.getHours()}:${manilaTime.getMinutes()}`;
             const uniqueKey = `${name}-${timeKey}`;
             
