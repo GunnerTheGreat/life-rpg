@@ -145,33 +145,54 @@ app.post('/api/add-quest', async (req, res) => {
     oauth2Client.setCredentials({ access_token: token });
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
-    let startTime;
-    try {
-        if (deadline) {
-            // 🛡️ TIMEZONE FIX
-            // 1. If it's a Routine (ends in 'Z'), it's already UTC. Use it as is.
-            if (deadline.endsWith('Z')) {
-                startTime = new Date(deadline);
-            } 
-            // 2. If it's a Side Quest (no 'Z'), FORCE it to be Manila Time (+08:00)
-            else {
-                // We append '+08:00' to tell the server: "This string is in Manila Time"
-                startTime = new Date(`${deadline}:00+08:00`); 
-            }
-        } else {
-            startTime = new Date();
+    let eventStart, eventEnd;
+
+    // 🛡️ TIMEZONE LOGIC
+    if (deadline) {
+        // CASE 1: Routines (End with 'Z') -> Already UTC, use as is.
+        if (deadline.endsWith('Z')) {
+            const startDate = new Date(deadline);
+            const endDate = new Date(startDate.getTime() + 3600000); // +1 Hour
+            
+            eventStart = { dateTime: startDate.toISOString() };
+            eventEnd = { dateTime: endDate.toISOString() };
+        } 
+        // CASE 2: Side Quests (Local Time) -> Send Raw String + Manila Timezone
+        else {
+            // Ensure seconds are present (Google requires seconds)
+            // If string is "23:59", make it "23:59:00"
+            const cleanDeadline = deadline.split(':').length === 2 ? `${deadline}:00` : deadline;
+            
+            eventStart = { 
+                dateTime: cleanDeadline, 
+                timeZone: 'Asia/Manila' 
+            };
+
+            // Calculate End Time (Just add 1 hour roughly for the block)
+            // We parse it just to get the numbers, but sending a raw string is safer for Start
+            const tempDate = new Date(deadline);
+            const tempEnd = new Date(tempDate.getTime() + 3600000);
+            // Format End Time manually to avoid UTC conversion issues
+            const endIso = tempEnd.toISOString().replace('.000Z', '');
+            
+            eventEnd = { 
+                dateTime: endIso, // Approximate end time
+                timeZone: 'Asia/Manila' 
+            };
         }
-
-        if (isNaN(startTime.getTime())) startTime = new Date();
-    } catch (err) { startTime = new Date(); }
-
-    const endTime = new Date(startTime.getTime() + 3600000); 
+    } else {
+        // Fallback: Now
+        const now = new Date();
+        const end = new Date(now.getTime() + 3600000);
+        eventStart = { dateTime: now.toISOString() };
+        eventEnd = { dateTime: end.toISOString() };
+    }
 
     let event = {
         summary: (type === 'main' ? '★ ' : '') + task,
         description: type,
-        start: { dateTime: startTime.toISOString(), timeZone: 'Asia/Manila' },
-        end: { dateTime: endTime.toISOString(), timeZone: 'Asia/Manila' },
+        start: eventStart,
+        end: eventEnd,
         reminders: {
             useDefault: false,
             overrides: [
