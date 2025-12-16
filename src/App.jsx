@@ -249,7 +249,7 @@ const LifeRPG = () => {
             </div>
         </div>
         <div className="flex gap-2">
-            <button onClick={() => sendReminder(q)} className={`p-2 ${theme.subtext} hover:text-blue-500 rounded-lg`}><Bell size={18} /></button>
+            {/* 🗑️ Bell Button Removed - Google handles this automatically now */}
             <button onClick={() => deleteQuest(q.id, q.type)} className="p-2 text-red-300 hover:text-red-500 rounded-lg"><Trash2 size={18} /></button>
             <button onClick={() => toggleQuest(q)} className={`px-3 py-1.5 font-bold text-sm rounded-lg flex items-center gap-1 transition-all ${q.completed ? 'bg-gray-200 text-gray-600' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
                 {q.completed ? <><RotateCcw size={14}/> Undo</> : <><CheckCircle size={14}/> Done</>}
