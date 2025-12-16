@@ -147,9 +147,24 @@ app.post('/api/add-quest', async (req, res) => {
 
     let startTime;
     try {
-        startTime = deadline ? new Date(deadline) : new Date();
+        if (deadline) {
+            // 🛡️ TIMEZONE FIX
+            // 1. If it's a Routine (ends in 'Z'), it's already UTC. Use it as is.
+            if (deadline.endsWith('Z')) {
+                startTime = new Date(deadline);
+            } 
+            // 2. If it's a Side Quest (no 'Z'), FORCE it to be Manila Time (+08:00)
+            else {
+                // We append '+08:00' to tell the server: "This string is in Manila Time"
+                startTime = new Date(`${deadline}:00+08:00`); 
+            }
+        } else {
+            startTime = new Date();
+        }
+
         if (isNaN(startTime.getTime())) startTime = new Date();
     } catch (err) { startTime = new Date(); }
+
     const endTime = new Date(startTime.getTime() + 3600000); 
 
     let event = {
@@ -157,12 +172,11 @@ app.post('/api/add-quest', async (req, res) => {
         description: type,
         start: { dateTime: startTime.toISOString(), timeZone: 'Asia/Manila' },
         end: { dateTime: endTime.toISOString(), timeZone: 'Asia/Manila' },
-        
         reminders: {
             useDefault: false,
             overrides: [
-                { method: 'email', minutes: 60 }, 
-                { method: 'popup', minutes: 30 }, 
+                { method: 'email', minutes: 60 },
+                { method: 'popup', minutes: 30 },
             ],
         },
     };
